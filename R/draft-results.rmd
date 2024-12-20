@@ -1,0 +1,117 @@
+---
+title: "Sarc draft results"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_knit$set(root.dir = here::here())
+
+library(flextable)
+library(tidyverse)
+
+e_table <- readRDS(here::here("data-generated", "summary-encounter-table.rds"))
+n_all_samples <- sum(c(e_table$`0`, e_table$`1`))
+
+d <- readRDS(here::here("data-generated", "clean-data.rds"))
+ld <- readRDS(here::here("data-generated", "length-dat.rds"))
+
+```
+
+## Summary results
+
+### Spatial distribution of occurrence
+
+Years included in the spatial analysis included 2019 - 2022 only because in 1999 and 2000 sarc occurrence data were only collected in `r d |> filter(year %in% 1999:2000) |> distinct(fishing_event_id) |> nrow()` tows.
+
+### Species infection rates
+- Table 1 summarises all the data: total number of records = `r scales::comma(n_all_samples)`
+- Only positive sarc encounters were recorded in most years.
+- A few species were only opportunisitically sampled when infected with Sarcotaces: Sharpchin Rockfish, Darkblotched Rockfish, Dusky Rockfish, and Rosethorn Rockfish.
+- Six species were sampled and never found to be infected with Sarcs (grey in Table 1). Of these, Shortbelly Rockfish, Tiger Rockfish, Pygmy Rockfish, and Black Rockfish have few samples (< 175). Given that the lowest observed infection rate of rockfish is < 1% (e.g., 1 / 292 = 0.34% China rockfish), these are probably not well sampled enough to have detections.
+- The species that were not systematically documented to be infections (i.e., uninfected tallied) were excluded from the rest of the analyses.
+- Shortspine Thornyhead had a high sampling rate (n = 1202) yet no detections. 
+- Longspine Thornyhead had 592 samples with no infections.
+
+```{r}
+
+e_table |>
+  mutate(Species = stringr::str_to_title(species), 
+         n = `0` + `1`, 
+         p = round(100 * (`1` / n), digits = 1)
+         ) |>
+  arrange(sarc_group, -p, -`1`, -`0`) |>
+  mutate(p = ifelse(`0` == 0, "-", as.character(p))) |>
+  select(Species, Uninfected = `0`, Infected = `1`, n, `Prevalence (%)` = p) |>
+  flextable::flextable() |>
+  bg(i = ~ Infected == 0, bg = "grey90") |>
+  align(j = "Prevalence (%)", align = "right", part = "all") |>
+  flextable::set_table_properties(layout = "autofit") |>
+  flextable::set_caption(
+    caption = "Table 1. Sample sizes and infection detections for species examined for Sarcotaces from 1969 - 2022. Species highlighted in grey had no observed infections."
+  )
+
+```
+
+### Depth distribution
+
+Figure/set_caption notes:
+
+Depth distribution of Sarcotaces sp. observations within species. 
+Species are arranged from left to right based on the absolute number of infected individuals. 
+The estimated density of uninfected (grey) and infected (white) fish is displayed, excluding cases with fewer than two observations. 
+Short horizontal lines represent individual observations.
+
+- Note: some species had zero depth values, I didn't filter these out because I wasn't sure if we wanted to have a visual of all the occurrences instead of a table, but maybe with table one these could be filtered out. We could also opt to show only species with more than X infections. I included them all for now.
+- In total there were `r sum(d$depth == 0)` depths = 0
+
+```{r}
+# No idea why I need this: https://stackoverflow.com/questions/75458365/knitrinclude-graphics-cant-find-file-if-knitr-root-dir-is-changed
+knitr::include_graphics(path = normalizePath("figures/depth-plot.png"), rel_path = FALSE)
+
+```
+
+### Encounter rates
+
+- Encounter data were only systematically sampled in six years (1999-2000 and 2019-2022).
+- Thought encounter data would be helpful for 
+
+
+### Maturity ~ length 
+
+- comparison of parameter posterior densities from models that included Sarc presence (Infection) or Sarc count
+
+```{r}
+table(ld$sarc_count) |>
+  enframe() |>
+  pivot_wider(names_from = name, values_from = value) |>
+  flextable::flextable() |>
+  flextable::set_caption("Frequency table of Sarcs found per specimen")
+```
+
+
+```{r}
+
+knitr::include_graphics(path = normalizePath("figures/maturity-length-infection-count-posterior-density.png"), 
+  rel_path = FALSE)
+
+```
+
+<br> </br>
+
+Mature ~ Length * Infection (1 | species)
+
+```{r}
+
+knitr::include_graphics(path = normalizePath("figures/maturity-length-infection-by-species.png"), 
+  rel_path = FALSE)
+```
+
+<br> </br>
+
+#### Maturity ~ length * sarc_count
+
+Not really enough data to look at species effects of sarc count on maturity,
+but I think there is enough to make a general statement about what it does on
+average - that a higher intensity of infection does likely have a negative
+effect on maturity at length/age
