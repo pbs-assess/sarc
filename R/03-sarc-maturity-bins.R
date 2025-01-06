@@ -33,32 +33,148 @@ dat <- readRDS(here::here("data-generated", "clean-data.rds")) |>
   mutate(maturity_bin = factor(maturity_code)) |>
   drop_na(sarc_count, sex, species, year, maturity_bin)
 
+# fit <- brm(
+#   sarc_count ~ 0 + Intercept + maturity_bin * sex +
+#   (1 + maturity_bin * sex | species),
+#   family = negbinomial(),
+#   data = dat,
+#   iter = 2000L,
+#   warmup = 500L,
+#   chains = 4L,
+#   cores = 4L,
+#   backend = "cmdstanr",
+#   prior = c(prior(normal(0, 5), class = b) +
+#             prior(student_t(3, 0, 2), class = sd) +
+#             prior(normal(0, 10), class = b, coef = Intercept),
+#   control = list(max_treedepth = 12, adapt_delta = 0.85))
+# )
+# savedRDS(fit, file.path(fit_dir, "sarc-number-by-group-brms.rds"))
+fit <- readRDS(file.path(fit_dir, "sarc-number-by-group-brms.rds"))
 
-fitf <- brm(
-  # sarc_count ~ 0 + Intercept + maturity_bin * sex +
-  #   (1 + maturity_bin * sex | species),
-  sarc_count ~ 0 + Intercept + maturity_bin +
-    (1 + maturity_bin | species),
-  family = zero_inflated_poisson(),
-  data = dat |> filter(sex == "female"),
-  iter = 2000L,
-  warmup = 500L,
-  chains = 4L,
-  cores = 4L,
-  backend = "cmdstanr",
-  prior = c(prior(normal(0, 5), class = b) +
-            prior(student_t(3, 0, 2), class = sd) +
-            prior(normal(0, 5), class = b, coef = Intercept) +
-            prior(beta(3, 1), class = zi)),  # the brms default is beta(1, 1)
-    # prior(normal(0, 5), class = b) +
-    # prior(student_t(3, 0, 2), class = sd) +
-    # prior(normal(0, 10), class = b, coef = Intercept),
-  control = list(max_treedepth = 12, adapt_delta = 0.95)
+nd <- expand.grid(
+  # species = unique(dat$species),
+  sex = unique(dat$sex),
+  maturity_bin = unique(dat$maturity_bin)
 )
-beepr::beep()
-saveRDS(fitf, file.path(fit_dir, "sarc-number-by-group-brms-zinp-female.rds"))
-# fit <- readRDS(file.path(fit_dir, "sarc-number-by-group-brms.rds"))
-fitf <- readRDS(file.path(fit_dir, "sarc-number-by-group-brms-zinp-female.rds"))
+
+lpd <- fit |> add_linpred_draws(newdata = nd)
+
+# Population-level
+lpd <- fit |> add_linpred_draws(newdata = nd, re_formula = NA, transform = TRUE) |>
+  mutate(maturity_group = ifelse(maturity_bin %in% 1:2, "immature", "mature"))
+lpd_summary <- lpd |>
+  group_by(sex, maturity_bin) |>
+  summarise(
+    mean_e = mean(.linpred),
+    median_e = median(.linpred),
+    lwr = quantile(.linpred, 0.05),
+    upr = quantile(.linpred, 0.95),
+    .groups = "drop"
+  )
+
+ggplot(data = lpd_summary, aes(x = maturity_bin)) +
+  facet_wrap(~ sex) +
+  geom_pointrange(aes(y = mean_e, ymin = lwr, ymax = upr))
+
+ppe |>
+  group_by(sex, maturity_group, .draw) |>
+  summarise(combined_epred = sum(.epred), .groups = "drop") |>
+ggplot(data = _, aes(x = maturity_group, y = combined_epred)) +
+  stat_pointinterval() +
+  facet_wrap(~ sex)
+
+
+# Species-level -----
+nd <- expand.grid(
+  species = unique(dat$species),
+  sex = unique(dat$sex),
+  maturity_bin = unique(dat$maturity_bin)
+)
+
+lpd_spp <- fit |> add_linpred_draws(newdata = nd) |>
+  mutate(maturity_group = ifelse(maturity_bin %in% 1:2, "immature", "mature"))
+lpd_spp_summary <- lpd_spp |>
+  group_by(sex, species, maturity_bin) |>
+  summarise(
+    mean_e = mean(.linpred),
+    median_e = median(.linpred),
+    lwr = quantile(.linpred, 0.05),
+    upr = quantile(.linpred, 0.95),
+    .groups = "drop"
+  )
+
+ggplot(data = lpd_spp_summary, aes(x = maturity_bin)) +
+  facet_grid(species ~ sex, scale = "free_y") +
+  geom_pointrange(aes(y = mean_e, ymin = lwr, ymax = upr))
+
+ppe <- fit |> add_epred_draws(newdata = nd) |>
+  mutate(maturity_group = ifelse(maturity_bin %in% 1:2, "immature", "mature"))
+
+ppe_summary <- ppe |>
+  # filter(species == "rougheye/blackspotted") |>arrange(-.epred)
+  group_by(sex, species, maturity_bin) |>
+  summarise(
+    mean_e = mean(.epred),
+    median_e = median(.epred),
+    lwr = quantile(.epred, 0.05),
+    upr = quantile(.epred, 0.95),
+    .groups = "drop"
+  )
+
+dev.set(2)
+filter(dat, species == "rougheye/blackspotted") |>
+  filter(sarc_count > 0) |>
+  ggplot() +
+  geom_jitter(aes(x = maturity_bin, y = sarc_count), height = 0.1, width = 0.3) +
+  facet_wrap(~ sex)
+
+dev.set(3)
+ggplot(data = ppe_summary, aes(x = maturity_bin)) +
+  facet_grid(species ~ sex, scale = "free_y") +
+  geom_pointrange(aes(y = median_e, ymin = lwr, ymax = upr))
+
+dev.set(4)
+ggplot(data = ppe_summary, aes(x = maturity_bin)) +
+  facet_grid(species ~ sex, scale = "free_y") +
+  geom_pointrange(aes(y = mean_e, ymin = lwr, ymax = upr))
+
+
+ppe |>
+  group_by(sex, maturity_group, .draw) |>
+  summarise(combined_epred = sum(.epred), .groups = "drop") |>
+ggplot(data = _, aes(x = maturity_group, y = combined_epred)) +
+  stat_pointinterval() +
+  facet_wrap(~ sex)
+
+
+# -----
+# better understand prior predictive checking
+# -----
+# fitf <- brm(
+#   # sarc_count ~ 0 + Intercept + maturity_bin * sex +
+#   #   (1 + maturity_bin * sex | species),
+#   sarc_count ~ 0 + Intercept + maturity_bin +
+#     (1 + maturity_bin | species),
+#   family = zero_inflated_poisson(),
+#   data = dat |> filter(sex == "female"),
+#   iter = 2000L,
+#   warmup = 500L,
+#   chains = 4L,
+#   cores = 4L,
+#   backend = "cmdstanr",
+#   prior = c(prior(normal(0, 5), class = b) +
+#             prior(student_t(3, 0, 2), class = sd) +
+#             prior(normal(0, 5), class = b, coef = Intercept) +
+#             prior(beta(3, 1), class = zi)),  # the brms default is beta(1, 1)
+#     # prior(normal(0, 5), class = b) +
+#     # prior(student_t(3, 0, 2), class = sd) +
+#     # prior(normal(0, 10), class = b, coef = Intercept),
+#   control = list(max_treedepth = 12, adapt_delta = 0.95)
+# )
+# beepr::beep()
+# saveRDS(fitf, file.path(fit_dir, "sarc-number-by-group-brms-zinp-female.rds"))
+# fitf <- readRDS(file.path(fit_dir, "sarc-number-by-group-brms-zinp-female.rds"))
+
 
 fitf_prior <- update(fitf, sample_prior = "only",
   prior = c(prior(normal(0, 2), class = b) +
