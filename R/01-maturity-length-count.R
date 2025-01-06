@@ -21,7 +21,7 @@ cld <- ld |>
   filter(species %in% spp_filter) |>
   filter(year >= 2019) |> # Did not seem to count sarcs in 1999/2000
   drop_na(sarc_count) |>
-  mutate(log_sarc_count = log(sarc_count + 0.01))
+  mutate(log_sarc_count = log(sarc_count + 0.1))
 
 dat <- cld |> filter(sarc_count > 0)
 m1 <- glmmTMB(
@@ -51,39 +51,49 @@ DHARMa::simulateResiduals(fittedModel = m2, plot = T)
 # but I think there is enough to make a general statement about what it does on
 # average - that a higher intensity of infection does likely have a negative
 # effect on maturity at length/age
-# Done: filter out n_encounters == 0
+# Done: filter out n_encounters == 0 (i.e., only species with at least one infected individual are included in this dataset)
 # TODO look at species level estimates of the parameters - specifically sarc count and sarc count * length to see if there is species variation
 # TODO plot residuals to make sure that the raw sarc counts are better, might need to have log(sarc_count)
 
+# Should zero sarc fish be included for this?
 
-# fit_2f_c <- brm(
-#   mature ~ 0 + Intercept + length_std * sarc_count +
-#     (1 + length_std * sarc_count | species),
-#   family = bernoulli(),
-#   data =
-#     cld |>
-#       filter(sex == "female"),
-#   iter = 2000L,
-#   warmup = 1000L,
-#   chains = 4L,
-#   cores = 4L,
-#   backend = "cmdstanr",
-#   prior =
-#     prior(normal(0, 5), class = b) +
-#     prior(student_t(3, 0, 2), class = sd) +
-#     prior(normal(0, 10), class = b, coef = Intercept),
-#   control = list(max_treedepth = 12, adapt_delta = 0.95)
-# )
-# saveRDS(fit_2f_c, file.path(fit_dir, "maturity-length-count-stan-female.rds"))
-# beepr::beep()
-
-# saveRDS(fit_2f_lc, file.path(fit_dir, "maturity-length-count-stan-female-lc.rds"))
-# beepr::beep()
-
-fit_2m_lc <- update(fit_2f_lc, newdata = cld |> filter(sex == "male"))
-saveRDS(fit_2m_lc, file.path(fit_dir, "maturity-length-count-stan-male-lc.rds"))
+fit_fc <- brm(
+  mature ~ 0 + Intercept + length_std * sarc_count +
+    (1 + length_std * sarc_count | species),
+  family = bernoulli(),
+  data = cld |> filter(sex == "female"),
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L,
+  backend = "cmdstanr",
+  prior =
+    prior(normal(0, 5), class = b) +
+    prior(student_t(3, 0, 2), class = sd) +
+    prior(normal(0, 10), class = b, coef = Intercept),
+  control = list(max_treedepth = 12, adapt_delta = 0.95)
+)
+saveRDS(fit_fc, file.path(fit_dir, "maturity-length-count-stan-female.rds"))
 beepr::beep()
-fit_2m_lc <- readRDS(file.path(fit_dir, "maturity-length-count-stan-male-lc.rds"))
+
+# Female count using log sarc count
+fit_flc <- update(fit_fc,
+  formula = mature ~ 0 + Intercept + length_std * log_sarc_count +
+    (1 + length_std * log_sarc_count | species))
+# saveRDS(fit_flc, file.path(fit_dir, "maturity-length-count-stan-female-lc.rds"))
+# beepr::beep()
+
+# Male count model
+# fit_mc <- update(fit_fc, newdata = cld |> filter(sex == "male"))
+
+# Male count using log sarc count
+fit_mlc <- update(fit_fc,
+  formula = mature ~ 0 + Intercept + length_std * log_sarc_count +
+    (1 + length_std * log_sarc_count | species),
+  newdata = cld |> filter(sex == "male"))
+# saveRDS(fit_mlc, file.path(fit_dir, "maturity-length-count-stan-male-lc.rds"))
+# beepr::beep()
+fit_mlc <- readRDS(file.path(fit_dir, "maturity-length-count-stan-male-lc.rds"))
 
 
 fit_2f_c <- readRDS(file.path(fit_dir, "maturity-length-count-stan-female.rds"))
@@ -233,7 +243,7 @@ cld |>
   labs(x = "Sarc Count", y = "Sex")
 
 # Fixed effects
-post_fe2 <- fit2 |> spread_draws(b_Intercept, b_length_std, b_sarc_count, `b_length_std:sarc_count`)
+post_fe2 <- fit_2f_c |> spread_draws(b_Intercept, b_length_std, b_sarc_count, `b_length_std:sarc_count`)
 post_fe2 <- post_fe2 |>
   pivot_longer(cols = b_Intercept:`b_length_std:sarc_count`, values_to = "fe_coef") |>
   mutate(term = gsub("^b_", "", name)) |>
@@ -247,18 +257,11 @@ pd_count_fe <- post_fe2 |>
   geom_density(fill = "grey90") +
   geom_vline(xintercept = 0) +
   facet_wrap(~ term, ncol = 1) +
-  coord_cartesian(xlim = c(-3, 6), ylim = c(0, 1.7), expand = FALSE) +
+  coord_cartesian(xlim = c(-3, 6), ylim = c(0, 1.8), expand = FALSE) +
   xlab("Coefficient estimate") + ylab("Posterior density")
 pd_count_fe
 
-
-(pd_length_fe + ggtitle("Mature ~ Length * Infection")) +
-(pd_count_fe +
-  theme(axis.title.y = element_blank(),
-        axis.text.y = element_blank()) +
-  ggtitle("Mature ~ Length * Sarc count"))
-
-ggsave(here::here("figures", "maturity-length-infection-count-posterior-density.png"),
+ggsave(here::here("figures", "maturity-length-count-posterior-density.png"),
   width = 7.5, height = 6)
 
 
