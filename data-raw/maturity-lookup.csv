@@ -1,0 +1,15 @@
+sex, maturity_code, maturity_desc
+female,1,immature
+female,2,maturing
+female,3,mature
+female,4,fertilized
+female,5,"embryos or larvae"
+female,6,spent
+female,7,resting
+male,1,immature
+male,2,maturing
+male,3,mature
+male,4,mature large
+male,5,running ripe
+male,6,spent
+male,7,resting
