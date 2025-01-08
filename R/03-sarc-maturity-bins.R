@@ -60,8 +60,17 @@ nd <- expand.grid(
 lpd <- fit |> add_linpred_draws(newdata = nd)
 
 # Population-level
-lpd <- fit |> add_linpred_draws(newdata = nd, re_formula = NA, transform = TRUE) |>
-  mutate(maturity_group = ifelse(maturity_bin %in% 1:2, "immature", "mature"))
+lpd <- fit |> add_linpred_draws(newdata = nd, re_formula = NA, transform = TRUE)
+lpd_wide <- lpd |>
+  ungroup() |>
+  select(-.row, -.chain, -.iteration, -maturity_group) |>
+  arrange(.draw, sex, maturity_bin) |>
+  pivot_wider(names_from = c(sex, maturity_bin), values_from = .linpred, names_sep = "_") |>
+  mutate(immature_female = female_1 + female_2,
+         mature_female = female_3 + female_4 + female_5 + female_6 + female_7,
+         immature_male = male_1 + male_2,
+         mature_male = male_3 + male_4 + male_5 + male_6 + male_7)
+
 lpd_summary <- lpd |>
   group_by(sex, maturity_bin) |>
   summarise(
@@ -76,12 +85,34 @@ ggplot(data = lpd_summary, aes(x = maturity_bin)) +
   facet_wrap(~ sex) +
   geom_pointrange(aes(y = mean_e, ymin = lwr, ymax = upr))
 
-ppe |>
-  group_by(sex, maturity_group, .draw) |>
-  summarise(combined_epred = sum(.epred), .groups = "drop") |>
-ggplot(data = _, aes(x = maturity_group, y = combined_epred)) +
-  stat_pointinterval() +
-  facet_wrap(~ sex)
+# Compare lpd of the mature and immature for each of females and males
+diff_f <- lpd_mat_group_wide$immature_female - lpd_mat_group_wide$mature_female
+hist(diff_f)
+lpd_wide |>
+  select(immature_female:mature_male) |>
+  mcmc_intervals(prob = 0.5, prob_outer = 0.9)
+
+test <- lpd_wide |>
+  mutate(diff_f = immature_female - mature_female,
+         diff_m = immature_male - mature_male)
+sum(test$diff_f[test$diff_f > 0]) / length(test$diff_f)
+sum(test$diff_m[test$diff_m > 0]) / length(test$diff_m)
+
+mcmc_areas(test, pars = c("diff_f", "diff_m"))
+
+lpd_wide |>
+  select(immature_female:mature_male) |>
+  mcmc_intervals(prob = 0.5, prob_outer = 0.9)
+
+# Question: Correlated across .draws right?
+
+ppd_diff <- ()
+PPD_diff <- PPD_A2 - PPD_A1
+
+
+ggplot(data = lpd_mat_group, aes(x = maturity_group)) +
+  facet_wrap(~ sex) +
+  geom_pointrange(aes(y = mean_e, ymin = lwr, ymax = upr))
 
 
 # Species-level -----
