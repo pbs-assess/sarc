@@ -48,25 +48,47 @@ ggplot(pp, aes(exp(log_depth), plogis(est), ymin = plogis(est - 2 * est_se), yma
   geom_ribbon(fill = "grey80") + geom_line() +
   scale_x_continuous(trans = "log10", expand = expansion(mult = c(0.02, 0.02), add = c(0, 0))) +
   theme_light() +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.02), add = c(0, 0))) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.02), add = c(0, 0)))
 
-grid <- gfplot::synoptic_grid |> select(X, Y, best_depth = depth)
-gridll <- gfplot::hbll_grid$grid |> select(lon = X, lat = Y, best_depth = depth) |>
-  add_utm_columns(c("lon", "lat"))
+# ----------
+# Prepare grid
+# grid <- gfplot::synoptic_grid |> select(X, Y, depth)
+# gridll <- gfplot::hbll_grid$grid |> select(lon = X, lat = Y, depth) |>
+#   add_utm_columns(c("lon", "lat"))
 
-# gridlli <- gfplot::hbll_inside_n_grid$grid |> select(X, Y, best_depth = depth)
-grid <- bind_rows(grid, gridll)
-grid$log_best_depth <- log(grid$best_depth + 1)
-grid$year_f <- d$year_f[1]
+# gridlli <- gfplot::hbll_inside_n_grid$grid |> select(X, Y, depth)
+# grid <- bind_rows(grid, gridll)
+
+# the new survey_blocks grid has a lot more cells than the old gfplot:: ones
+g0 <- gfdata::survey_blocks |>
+  filter(grepl("SYN|HBLL", survey_abbrev),
+        active_block == TRUE) |>
+  st_centroid()
+g_coords <- st_coordinates(g0)
+g <- g0 |>
+  select(survey_abbrev, area, depth = depth_m) |>
+  mutate(X = g_coords[, 1] / 1000, Y = g_coords[, 2] / 1000) |>
+  st_drop_geometry() |>
+  as_tibble()
+
+# There are some weird depths in the new grids
+g |> filter(depth == 0)
+g |> filter(depth < 0)
+
+g <- filter(g, depth > 0, depth < 1300) # exclude grids less than 0...
+# Also filter out grids that are deeper tha 1300? The original grids were maxed out at 1300
+
+g$log_depth <- log(g$depth)
+g$year_f <- d$year_f[1]
 
 ggplot(d, aes(lon, lat, colour = sarc_presence)) +
   geom_point(data = filter(d, sarc_presence == 0), colour = "black") +
   geom_point(data = filter(d, sarc_presence == 1), colour = "red") +
   coord_fixed()
 
-grid$year <- 2022
-grid$year_f <- factor(grid$year, levels = levels(d$year_f))
-p <- predict(fit, newdata = grid)
+g$year <- 2022
+g$year_f <- factor(g$year, levels = levels(d$year_f))
+p <- predict(fit, newdata = g)
 
 # x <- seq(-100, 100, length.out = 100)
 # b1 <- 0.05
