@@ -1,6 +1,8 @@
 library(dplyr)
 library(ggplot2)
+library(ggtext) # for italics
 library(sdmTMB)
+library(sf)
 
 # Load data
 d0 <- readRDS(here::here("data-generated", "clean-data.rds"))
@@ -110,16 +112,6 @@ p <- predict(fit, newdata = g)
 # last - first
 #
 
-
-qlogis_trans <- function() {
-  scales::trans_new(
-    name = "qlogis",
-    transform = function(x) qlogis(x),
-    inverse = function(x) plogis(x),
-    minor_breaks = function(x) c
-    domain = c(0, 1))
-}
-
 map_data <- rnaturalearth::ne_countries(
   scale = "large",
   returnclass = "sf", country = "canada")
@@ -129,21 +121,38 @@ bc_coast <- suppressWarnings(suppressMessages(
 utm_zone9 <- 3156
 bc_coast_proj <- sf::st_transform(bc_coast, crs = utm_zone9)
 
-library(ggtext) # for italics
+qlogis_trans <- function() {
+  scales::trans_new(
+    name = "qlogis",
+    transform = function(x) qlogis(x),
+    inverse = function(x) plogis(x),
+    minor_breaks = function(x) c,
+    domain = c(0, 1))
+}
 
 g1 <- ggplot(bc_coast_proj) + geom_sf() +
   geom_tile(width = 2000, height = 2000, data = p, mapping = aes(X * 1000, Y * 1000, fill = plogis(est))) +
-  scale_fill_viridis_c(option = "F", trans = "qlogis", breaks = c(0.01, 0.1, 0.5, 0.9, 0.99)) +
+  scale_fill_viridis_c(option = "F",
+    trans = "qlogis",
+    limits = c(1e-3, 0.5),  # Set meaningful limits for visualization
+    breaks = c(0.001, 0.01, 0.1, 0.5),
+    labels = c("< 0.1%", "1%", "10%", "50%"),
+    name = "Probability of *Sarcotaces* sp. encounter",
+    oob = scales::squish,
+    guide = guide_colorbar(title.position = "top", barheight = 0.5, barwidth = 12)) +
   coord_sf() +
   theme_light() +
   # geom_point(data = filter(d, sarc_presence == 0), mapping = aes(X, Y), inherit.aes = FALSE, colour = "white", alpha = 0.01, size = 1, pch = 4) +
   # geom_point(data = filter(d, sarc_presence == 1), mapping = aes(X * 1000, Y * 1000), inherit.aes = FALSE, colour = "white", alpha = 0.1, size = 2, pch = 4, fill = NA) +
   xlim(230957.7 - 80000, 1157991 - 220000) +
   ylim(5366427 - 25000, 6353456 - 250000) +
-  theme(legend.title = element_markdown()) +
-  labs(fill = "Probability of<br>*Sarcotaces* sp.<br>encounter", x = "Longitude", y = "Latitude") +
-  theme(legend.position = "bottom")
-# g1
+  theme(legend.title = element_markdown(hjust = 0.5),
+        legend.direction = "horizontal",
+        legend.position = "top",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank()) +
+  labs(x = "Longitude", y = "Latitude")
+g1
 
 d$present <- ifelse(d$sarc_presence == "1", "Yes", "No")
 g2 <- ggplot(bc_coast_proj) + geom_sf() +
@@ -153,15 +162,18 @@ g2 <- ggplot(bc_coast_proj) + geom_sf() +
   scale_colour_manual(values = c("No" = "grey60", "Yes" = "red")) +
   xlim(230957.7 - 80000, 1157991 - 220000) +
   ylim(5366427 - 25000, 6353456 - 250000)+
-  theme(legend.title = element_markdown()) +
-  labs(x = "Longitude", y = "Latitude", colour = "*Sarcotaces* sp.<br>encounter", shape = "*Sarcotaces* sp.<br>encounter") +
-  theme(legend.position = "bottom") +
-  guides(colour = guide_legend(override.aes = list(alpha = 1)))
+  theme(legend.title = element_markdown(hjust = 0.5)) +
+  labs(x = "Longitude", y = "Latitude",
+    colour = "*Sarcotaces* sp. encounter",
+    shape = "*Sarcotaces* sp. encounter") +
+  theme(legend.position = "top") +
+  guides(colour = guide_legend(override.aes = list(alpha = 1), title.position = "top"),
+         shape = guide_legend(title.position = "top"))
 # g2
 
 library(patchwork)
-g <- g2 + g1
-ggsave("draft_figs/map.png", width = 9.5, height = 5.25)
+g_out <- g2 + g1
+ggsave(here::here("figures", "map.png"), width = 7.5, height = 5)
 
 ggplot(p, aes(X, Y, fill = est)) +
   geom_tile(width = 2, height = 2) +
@@ -179,7 +191,7 @@ group_by(d, year) |>
   summarise(prop = mean(as.integer(as.character(sarc_presence))), n = n()) |>
   as.data.frame()
 
-# TODO
-# - [ ] better grid
-# - [ ] early years!? all 1s
-# - [ ] same depth assignment
+# TODO - done?
+# - [x] better grid
+# - [x] early years!? all 1s
+# - [x] same depth assignment
