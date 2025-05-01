@@ -2,61 +2,29 @@ library(dplyr)
 library(ggplot2)
 library(sdmTMB)
 
-# d <- readr::read_csv("sarc_specimens.csv", show_col_types = FALSE)
-# vroom::problems(d)
-# saveRDS(d, file = "data-raw/sarc_specimens.rds")
-d <- readRDS("data-raw/sarc_specimens.rds")
-d$year <- as.numeric(stringr::str_sub(d$FE_BEGIN_RETRIEVAL_TIME, 1, 4))
+# Load data
+d0 <- readRDS(here::here("data-generated", "clean-data.rds"))
 
-names(d) <- tolower(names(d))
-glimpse(d)
+d <- d0 |>
+  tidyr::drop_na(lat) |>
+  add_utm_columns(c("lon", "lat"), utm_crs = 32609) |>
+  filter((lon > -135), fishing_event_id != 5751520) |> # weird outliers way off the coast
+  filter(year >= 2019) |> # once observations become more consistent
+  mutate(log_depth = log(depth))
 
-d$best_lat <- as.numeric(d$best_lat)
-d$best_long <- as.numeric(d$best_long)
+# A few checks:
+# Zero depths removed
+min(d$depth)
+# Only 7 fishing events in 1999 & 2000
+d0 |> filter(year %in% 1999:2000) |> distinct(fishing_event_id) |> nrow()
 
-d <- filter(d, !is.na(best_lat))
-d <- filter(d, !is.na(best_long))
-# !?
-
-d$lon <- d$best_long * -1
-d$lat <- d$best_lat
-
-table(d$sarc_presence)
-
-d <- d %>%
-  filter(sarc_comb != "na") |>
-  mutate(sarc_presence = case_when(
-    sarc_comb %in% c("0", "N") ~ 0,
-    sarc_comb %in% c("Y", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10") ~ 1
-  )) |>
-  mutate(sarc_presence = as.factor(sarc_presence))
-
-table(d$sarc_presence)
-
-d <- filter(d, !is.na(year))
-
-d <- add_utm_columns(d, c("lon", "lat"))
-
-d <- filter(d, year >= 1999)
-
-ggplot(d, aes(lon, lat, colour = as.factor(sarc_presence), pch = as.factor(sarc_presence))) +
-  geom_point(alpha = 0.2) +
-  geom_point(data = filter(d, sarc_presence == 1), colour = "black") +
-  facet_wrap(~year)
-
-d$sarc_presence <- as.numeric(as.character(d$sarc_presence))
-table(d$sarc_presence)
-table(d$sarc_presence)
-
-d$log_best_depth <- log(d$best_depth + 1)
-
-d <- filter(d, year >= 2019)
+# Fit spatial model
 mesh <- make_mesh(d, c("X", "Y"), cutoff = 5)
 plot(mesh)
 d$year_f <- as.factor(d$year)
 fit <- sdmTMB(
-  sarc_presence ~ 1 + poly(log_best_depth, 2) + year_f,
-  # sarc_presence ~ 1 + poly(log_best_depth, 2) + s(year, k = 5),
+  sarc_presence ~ 1 + poly(log_depth, 2) + year_f,
+  # sarc_presence ~ 1 + poly(log_depth, 2) + s(year, k = 5),
   # sarc_presence ~ 1,
   # time_varying = ~1,
   # time_varying_type = "rw",
@@ -70,12 +38,13 @@ sanity(fit)
 fit
 plot_anisotropy(fit)
 
-ggeffects::ggeffect(fit, "log_best_depth [all]") |> plot()
+ggeffects::ggeffect(fit, "log_depth [all]") |> plot()
 ggeffects::ggpredict(fit, terms = "year_f [all]") |> plot()
 
-nd <- data.frame(log_best_depth = seq(min(d$log_best_depth), max(d$log_best_depth), length.out = 200), year_f = "2022")
+nd <- data.frame(log_depth = seq(min(d$log_depth), max(d$log_depth), length.out = 200),
+                 year_f = "2022")
 pp <- predict(fit, newdata = nd, se_fit = TRUE, re_form = NA)
-ggplot(pp, aes(exp(log_best_depth), plogis(est), ymin = plogis(est - 2 * est_se), ymax = plogis(est + 2 * est_se))) +
+ggplot(pp, aes(exp(log_depth), plogis(est), ymin = plogis(est - 2 * est_se), ymax = plogis(est + 2 * est_se))) +
   geom_ribbon(fill = "grey80") + geom_line() +
   scale_x_continuous(trans = "log10", expand = expansion(mult = c(0.02, 0.02), add = c(0, 0))) +
   theme_light() +
