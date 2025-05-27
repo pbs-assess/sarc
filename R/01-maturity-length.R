@@ -1,5 +1,7 @@
 library(tidyverse)
+library(stringr)
 library(scales)
+library(flextable)
 
 library(glmmTMB)
 library(broom.mixed)
@@ -13,6 +15,10 @@ library(patchwork)
 theme_set(ggsidekick::theme_sleek())
 
 fit_dir <- here::here("data-generated", "models")
+
+e_table <- readRDS(here::here("data-generated", "encounter-spp-table-systematic-years.rds"))
+main_spp <- e_table |>
+  filter(`0` > 10 & `1` > 10)
 
 # Maturity ~ Sarc Presence
 # ------------------------------------------------------------------------------
@@ -88,13 +94,14 @@ fit_dir <- here::here("data-generated", "models")
 # -------------------
 ld <- readRDS("data-generated/length-dat.rds") |>
   filter(sex %in% c("female", "male"))
+# options(mc.cores = parallel::detectCores() - 2)
 # fit_1f <- brm(
 #   mature ~ 0 + Intercept + length_std * sarc_presence +
 #     (1 + length_std * sarc_presence | species),
 #   family = bernoulli(),
 #   data = ld |> filter(sex == "female"),
-#   iter = 1000L,
-#   warmup = 500L,
+#   iter = 4000L,
+#   warmup = 1000L,
 #   chains = 4L,
 #   cores = 4L,
 #   backend = "cmdstanr",
@@ -109,11 +116,58 @@ ld <- readRDS("data-generated/length-dat.rds") |>
 # beepr::beep()
 fit_1f <- readRDS(file.path(fit_dir, "maturity-length-stan-female.rds"))
 
+# options(mc.cores = parallel::detectCores() - 2)
 # fit_1m <- update(fit_1f, newdata = ld |> filter(sex == "male"))
 # saveRDS(fit_1m, file.path(fit_dir, "maturity-length-stan-male.rds"))
 # beepr::beep()
 fit_1m <- readRDS(file.path(fit_dir, "maturity-length-stan-male.rds"))
 
+# Prior checking
+# ------------------------
+priors <- (
+  prior(normal(0, 5), class = b) +
+  prior(student_t(3, 0, 2), class = sd) +
+  prior(normal(0, 10), class = b, coef = Intercept)
+)
+fit_1f_p <- update(fit_1f, sample_prior = "only")
+fit_1m_p <- update(fit_1m, sample_prior = "only")
+
+mcmc_areas(as_draws_df(fit_1f_p), regex_pars = c("^b_"))
+mcmc_areas(as_draws_df(fit_1f_p), regex_pars = c("^sd_")) +
+  xlim(c(0, 25))
+
+# Get prior draws
+f_comb <- bind_rows(
+  as_draws_df(fit_1f_p) |> mutate(source = "prior"),
+  as_draws_df(fit_1f) |> mutate(source = "posterior")
+)
+f_comb |>
+  pivot_longer(cols = starts_with("b_"), names_to = "parameter") |>
+  ggplot(aes(x = value, fill = source)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~parameter, scales = "free")
+f_comb |>
+  pivot_longer(cols = starts_with("sd_"), names_to = "parameter") |>
+  ggplot(aes(x = value, fill = source)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~parameter, scales = "free") +
+  xlim(c(0, 20))
+
+m_comb <- bind_rows(
+  as_draws_df(fit_1m_p) |> mutate(source = "prior"),
+  as_draws_df(fit_1m) |> mutate(source = "posterior")
+)
+m_comb |>
+  pivot_longer(cols = starts_with("b_"), names_to = "parameter") |>
+  ggplot(aes(x = value, fill = source)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~parameter, scales = "free")
+m_comb |>
+  pivot_longer(cols = starts_with("sd_"), names_to = "parameter") |>
+  ggplot(aes(x = value, fill = source)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~parameter, scales = "free") +
+  xlim(c(0, 20))
 
 # Maturity ~ presence brms
 # ------------------------
@@ -138,14 +192,14 @@ pd_length_fe <- post_fe |>
   ggplot(aes(x = fe_coef)) +
   facet_grid(term ~ sex) +
   geom_vline(xintercept = 0) +
-  ggsidekick::theme_sleek() +
+  ggsidekick::theme_sleek(base_size = 10) +
   geom_density(fill = "grey90") +
   # facet_wrap(~ term, ncol = 1) +
   coord_cartesian(xlim = c(-3, 6), ylim = c(0, 1.7), expand = FALSE) +
   xlab("Coefficient estimate") + ylab("Posterior density") +
-  ggtitle("Maturity ~ length: Females")
+  theme(strip.clip = "off")
 pd_length_fe
-ggsave(here::here("figures", "maturity-length-posterior-densities.png"))
+ggsave(here::here("figures", "maturity-length-posterior-densities.png"), width = 4.4, height = 3.8)
 
 # Species effects
 post_re_1f <- fit_1f |> spread_draws(r_species[species, term]) |>
@@ -158,14 +212,14 @@ post <- bind_rows(post_re_1f, post_re_1m) |>
          term = gsub("sarc_presence", "Infection", term)) |>
   mutate(term = factor(term, levels = c("Intercept", "Length", "Infection", "Length:Infection")))
 
-
-ggplot(post, aes(x = r_species, y = term)) +
-  facet_wrap(~ sex) +
-  geom_vline(xintercept = 0) +
-  stat_halfeye()
+# ggplot(post, aes(x = r_species, y = term)) +
+#   facet_wrap(~ sex) +
+#   geom_vline(xintercept = 0) +
+#   stat_halfeye()
 
 post_spp <- left_join(post_fe, post) |>
-  mutate(combined = r_species + fe_coef)
+  mutate(combined = r_species + fe_coef) |>
+  mutate(species = gsub("\\.", " ", species))
 
 post_spp |>
   filter(term != "Intercept") |>
@@ -211,7 +265,7 @@ out |>
   mutate(sarc_pres_label = factor(sarc_presence, levels = c(0, 1), labels = c("No", "Yes"))) |>
 ggplot(aes(x = fork_length, y = plogis(est),
            colour = sarc_pres_label, fill = sarc_pres_label)) +
-  facet_wrap(~ sex) +
+  facet_wrap(~ sex, labeller = labeller(sex = str_to_title)) +
   geom_ribbon(aes(ymin = plogis(lwr), ymax = plogis(upr)), colour = NA, alpha = 0.3) +
   geom_line() +
   coord_cartesian(expand = FALSE, xlim = c(50, 750), ylim = c(-0.08, 1.08)) +
@@ -227,7 +281,8 @@ ggplot(aes(x = fork_length, y = plogis(est),
   scale_fill_manual(values = c("No" = "grey50", "Yes" = "red")) +
   scale_colour_manual(values = c("No" = "grey50", "Yes" = "red")) +
   theme(legend.position = "top")
-ggsave(here::here("figures", "maturity-length-infection.png"), width = 4.2, height = 4.3)
+ggsave(here::here("figures", "maturity-length-ogive.png"), width = 8, height = 4)
+ggsave(here::here("figures", "maturity-length-ogive.pdf"), width = 8, height = 4)
 
 # ----
 # Species-level
@@ -264,7 +319,7 @@ ggplot(aes(x = fork_length, y = plogis(est),
   scale_fill_manual(values = c("No" = "grey50", "Yes" = "red")) +
   scale_colour_manual(values = c("No" = "grey50", "Yes" = "red")) +
   theme(legend.position = "top")
-ggsave(here::here("figures", "maturity-length-infection-by-species.png"), width = 14, height = 5.5)
+ggsave(here::here("figures", "maturity-length-ogive-by-species.png"), width = 14, height = 5.5)
 
 # --------------------------
 # Compare expected length when probability of maturity > 0.5
@@ -314,7 +369,7 @@ p50_diff <- p50df |>
   )
 
 p50_diff |>
-  mutate(species = factor(species, levels = test |> filter(sex == "female") |> arrange(-mid) |> pull("species"))) |>
+  mutate(species = factor(species, levels = p50_diff |> filter(sex == "female") |> arrange(-mid) |> pull("species"))) |>
   ggplot(aes(mid, species, xmin = lwr, xmax = upr)) +
   geom_linerange(lwd = 0.4) +
   geom_linerange(aes(xmin = lwr2, xmax = upr2), lwd = .7) +
@@ -322,53 +377,183 @@ p50_diff |>
   geom_vline(xintercept = 0, lty = 2)+
   theme(axis.title.y.left = element_blank()) +
   ggsidekick::theme_sleek() +
-  xlab("Difference in<br>length at 50% maturity<br>if infected with *Sarcotaces* sp.<br>(mm)") +
+  xlab("Difference in length at 50% maturity<br>if infected with *Sarcotaces* sp.<br>(mm)") +
   theme(axis.title = ggtext::element_markdown()) +
   ylab("") +
-  facet_grid(. ~ sex) +
+  facet_grid(. ~ sex, labeller = labeller(sex = str_to_title)) +
+  scale_y_discrete(label = str_to_title) +
   scale_x_continuous(limits = c(-100, 100), oob = scales::squish) # NOTE: copper rockfish cutoff
 ggsave(here::here("figures", "maturity-length-p50-by-species.png"), width = 8, height = 7)
 
-# ------------------------------------------------------------------------------
-# Check how predictions compare to raw data
-# I don't really get this
-breaks <- seq(min(ld$fork_length, na.rm = TRUE), max(ld$fork_length, na.rm = TRUE), length.out = 30)
+p50_diff_spp_levels <- p50_diff |> filter(sex == "female") |> arrange(-mid) |> pull("species")
 
-l_bins <- ld |>
+p50_diff |>
+  filter(species %in% main_spp$species) |>
+  mutate(species = factor(species, levels = p50_diff |> filter(sex == "female") |> arrange(-mid) |> pull("species"))) |>
+  ggplot(aes(mid, species, xmin = lwr, xmax = upr)) +
+  geom_linerange(lwd = 0.4) +
+  geom_linerange(aes(xmin = lwr2, xmax = upr2), lwd = .7) +
+  geom_point(pch = 19) +
+  geom_vline(xintercept = 0, lty = 2)+
+  theme(axis.title.y.left = element_blank()) +
+  ggsidekick::theme_sleek() +
+  xlab("Difference in length at 50% maturity<br>if infected with *Sarcotaces* sp.<br>(mm)") +
+  theme(axis.title = ggtext::element_markdown()) +
+  ylab("") +
+    facet_grid(. ~ sex, labeller = labeller(sex = str_to_title)) +
+
+  scale_y_discrete(labels = str_to_title) +
+  scale_x_continuous(limits = c(-60, 60), oob = scales::squish) # NOTE: copper rockfish cutoff
+ggsave(here::here("figures", "maturity-length-p50-by-main-species.png"), width = 5.5, height = 3.5)
+
+out_spp |>
+  mutate(sarc_pres_label = factor(sarc_presence, levels = c(0, 1), labels = c("No", "Yes"))) |>
+  filter(species %in% main_spp$species) |>
+  mutate(species = factor(species, levels = p50_diff_spp_levels)) |>
+ggplot(aes(x = fork_length, y = plogis(est),
+           colour = sarc_pres_label, fill = sarc_pres_label)) +
+  facet_grid(sex ~ species, labeller = labeller(species = function(x) stringr::str_to_title(x), sex = function(x) stringr::str_to_title(x))) +
+  geom_ribbon(aes(ymin = plogis(lwr), ymax = plogis(upr)), colour = NA, alpha = 0.3) +
+  geom_line() +
+  coord_cartesian(expand = FALSE, xlim = c(50, 750), ylim = c(-0.08, 1.08)) +
+  geom_segment(data = ld |>
+      filter(mature == 1 & species %in% main_spp$species) |>
+      mutate(species = factor(species, levels = p50_diff_spp_levels)),
+    mapping = aes(x = fork_length, y = 1.01 + 0.03 * sarc_presence, yend = 1.04 + 0.03 * sarc_presence),
+    alpha = 0.6, position = position_dodge2(width = 0.5)) +
+  geom_segment(data = ld |>
+      filter(mature == 0 & species %in% main_spp$species) |>
+      mutate(species = factor(species, levels = p50_diff_spp_levels)),
+    mapping = aes(x = fork_length, y = -0.04 - 0.03 * sarc_presence, yend = -0.01 - 0.03 * sarc_presence),
+    alpha = 0.6, position = position_dodge2(width = 0.5)) +
+  labs(x = "Fork length (mm)", y = "Probability of maturity",
+       colour = "*Sarcotaces* sp. present", fill = "*Sarcotaces* sp. present") +
+  theme(legend.title = ggtext::element_markdown()) +
+  scale_fill_manual(values = c("No" = "grey50", "Yes" = "red")) +
+  scale_colour_manual(values = c("No" = "grey50", "Yes" = "red")) +
+  theme(legend.position = "top")
+ggsave(here::here("figures", "maturity-length-ogive-by-main-species.png"), width = 14, height = 5.5)
+ggsave(here::here("figures", "maturity-length-ogive-by-main-species.pdf"), width = 14, height = 5.5)
+
+
+# Reference table for values in text
+female_order <- p50_diff |>
   filter(sex == "female") |>
+  arrange(desc(mid)) |>
+  pull(species)
+
+# p50_diff_tab <- p50_diff |>
+#   mutate(
+#     mid = round(mid, 1),
+#     `75% CI` = paste0(round(lwr2, 1), " to ", round(upr2, 1)),
+#     `95% CI` = paste0(round(lwr, 1), " to ", round(upr, 1))
+#   ) |>
+#   select(species, sex, `Median` = mid, `75% CI`, `95% CI`) |>
+#   pivot_wider(
+#     names_from = sex,
+#     values_from = c(Median, `75% CI`, `95% CI`),
+#     names_glue = "{sex} {.value}"
+#   ) |>
+#   select(Species = species, starts_with("female"), starts_with("male")) |>
+#   mutate(Species = factor(Species, levels = female_order)) |>
+#   arrange(Species)
+# saveRDS(p50_diff_tab, here::here("data-generated", "p50-length-diff-table.rds"))
+
+
+p50_diff_tab <- p50_diff |>
+  mutate(
+    Median = round(mid, 1),
+    # `75% CI` = paste0(round(lwr2, 1), " to ", round(upr2, 1)),
+    `95% CI` = paste0(round(lwr, 1), " to ", round(upr, 1))
+  ) |>
+  # select(sex, species, Median, `75% CI`, `95% CI`) |>
+  select(sex, species, Median, `95% CI`) |>
+  arrange(sex, -Median) |>
+  as_grouped_data(groups = c("sex")) |>
+  flextable() |>
+  theme_booktabs() |>
+  autofit() |>
+  set_caption("Differece in length at 50% maturity by sex (infected - uninfected)")
+saveRDS(p50_diff_tab, here::here("data-generated", "p50-length-diff-table.rds"))
+
+# ------------------------------------------------------------------------------
+# Posterior predictive checks
+# -----
+brms::pp_check(fit_1f, ndraws = 50)
+
+# Observations
+y_obs_f <- ld |> filter(sex == "female") |> pull(mature)
+# Posterior predictions
+yrep_f <- posterior_predict(fit_1f)
+ppc_stat(y = y_obs_f, yrep = yrep_f, stat = mean)
+ppc_dens_overlay(y_obs_f, yrep_f)
+
+# Species means
+ppc_stat_grouped(y = y_obs_f, yrep = yrep_f, group = fit_1f$data$species, stat = mean)
+
+# Compare simulated mean expectations with observed maturity proportions
+breaks <- seq(min(ld$fork_length, na.rm = TRUE), max(ld$fork_length, na.rm = TRUE), length.out = 100)
+
+pp_f <- posterior_predict(fit_1f, ndraws = 20, re_formula = NULL)
+pp_m <- posterior_predict(fit_1m, ndraws = 20, re_formula = NULL)
+
+# Observed
+l_bins <- ld |>
   mutate(fork_length_bin = cut(fork_length, breaks = breaks, include.lowest = TRUE)) |>
-  group_by(species, fork_length_bin, sarc_presence) |>
+  group_by(species, sex, fork_length_bin, sarc_presence) |>
   summarise(
     prop_mature = sum(mature) / n(),
     mean_fork_length = mean(fork_length, na.rm = TRUE),
     .groups = "drop"
   )
 
-pp_f_population <- fit_1f |>
-  add_predicted_draws(newdata = nd_f, re_formula = NULL)
+l_bins |>
+  filter(sarc_presence == 0) |>
+ggplot(data = _, aes(x = mean_fork_length, y = prop_mature)) +
+  geom_point() +
+  guides(colour = "none") +
+  facet_grid(sex ~ ., scales = "free_x")
 
+# Simulated
+pp_f_species <- fit_1f |>
+  # add_epred_draws(
+  add_predicted_draws(
+    newdata = ld |>
+      filter(sex == "female") |>
+      select(sex, species, fork_length, sarc_presence, length_std) |>
+      mutate(fork_length_bin = cut(fork_length, breaks = breaks, include.lowest = TRUE)),
+  re_formula = NULL, ndraws = 10)
 
-breaks2 <- seq(min(ld$fork_length, na.rm = TRUE), max(ld$fork_length, na.rm = TRUE), length.out = 20)
-test <- pp_f_population |>
-  filter(species == "yelloweye rockfish") |>
-  mutate(fork_length_bin = cut(fork_length, breaks = breaks2, include.lowest = TRUE)) |>
-  group_by(species, .draw, fork_length_bin, sarc_presence) |>
+pp_m_species <- fit_1m |>
+  add_predicted_draws(
+    newdata = ld |>
+      filter(sex == "male") |>
+      select(sex, species, fork_length, sarc_presence, length_std) |>
+      mutate(fork_length_bin = cut(fork_length, breaks = breaks, include.lowest = TRUE)),
+  re_formula = NULL, ndraws = 10)
+
+pred <- bind_rows(pp_f_species, pp_m_species) |>
+  mutate(fork_length_bin = cut(fork_length, breaks = breaks, include.lowest = TRUE)) |>
+  group_by(species, sex, .draw, fork_length_bin, sarc_presence) |>
   summarise(
+    # prop_mature = sum(.epred) / n(),
     prop_mature = sum(.prediction) / n(),
     mean_fork_length = mean(fork_length, na.rm = TRUE),
     .groups = "drop"
   )
-test |>
-ggplot(data = _, aes(x = mean_fork_length, y = prop_mature, colour = factor(sarc_presence))) +
-  geom_point()
 
-test <- pp_f_population |>
-  group_by(sex, species, sarc_presence, fork_length) |>
-  summarise(median_p = quantile(.prediction, probs = 0.5),
-            lwr = quantile(.prediction, probs = 0.05),
-            upr = quantile(.prediction, probs = 0.95)) |>
-ggplot(data = _, aes(x = fork_length, colour = factor(sarc_presence))) +
-  geom_line(aes(y = median_p)) +
-  geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.3) +
-  # geom_point(colour = "grey40") +
-  facet_wrap(~ species)
+bind_rows(l_bins, pred) |>
+  filter(sex == "female") |>
+ggplot(data = _, aes(x = mean_fork_length, y = prop_mature)) +
+  geom_point(aes(colour = species)) +
+  guides(colour = "none") +
+  scale_color_brewer(palette = "Paired") +
+  facet_grid(.draw ~ sarc_presence, scales = "free_x")
+
+bind_rows(l_bins, pred) |>
+  filter(sex == "male") |>
+ggplot(data = _, aes(x = mean_fork_length, y = prop_mature)) +
+  geom_point(aes(colour = species)) +
+  guides(colour = "none") +
+  scale_color_brewer(palette = "Paired") +
+  facet_grid(.draw ~ sarc_presence, scales = "free_x")

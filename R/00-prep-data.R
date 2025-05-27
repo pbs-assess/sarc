@@ -62,21 +62,24 @@ d0 <- full_df |>
   tidyr::drop_na(sarc_presence) |>
   mutate(across(everything(), ~ ifelse(. == "NULL", NA, .))) |>
   mutate(across(c(specimen_age, fork_length, round_weight), \(x) as.numeric(x))) |>
-  mutate(sarc_pres_label = factor(sarc_presence, levels = c(0, 1), labels = c("No", "Yes")))
+  mutate(sarc_pres_label = factor(sarc_presence, levels = c(0, 1), labels = c("No", "Yes"))) |>
+  tidyr::drop_na(survey_series_id) # omit commercial samples - only yelloweye and not clearly systematic
   # left_join(mat_lu)
 
 saveRDS(d0, here::here("data-generated", "clean-data-all-years.rds"))
 
 d <- d0 |>
-  # filter(year %in% 2019:2022) # in the other years, only presence was recorded
-  filter(year %in% c(1999, 2000, 2019:2022))
+  filter(year %in% 2019:2022) # in the other years, only presence was recorded
+  # filter(year %in% c(1999, 2000, 2019:2022)) |>
+  # drop_na(survey_series_desc)
 saveRDS(d, here::here("data-generated", "clean-data.rds"))
 
 e_spp <- d |> group_by(species) |>
-  summarise(prop = sum(sarc_presence) / n(),
+  reframe(prop = sum(sarc_presence) / n(),
             n = n(),
-            n_encounters = sum(sarc_presence)) |>
-  arrange(n, prop)
+            n_encounters = sum(sarc_presence)
+            ) |>
+  arrange(-n, prop)
 saveRDS(e_spp, here::here("data-generated", "clean-data-encounter-summary.rds"))
 
 # trip_sub_type_desc == "OBSERVED DOMESTIC" means that there was an onboard observer

@@ -12,11 +12,13 @@ d <- d0 |>
   add_utm_columns(c("lon", "lat"), utm_crs = 32609) |>
   filter((lon > -135), fishing_event_id != 5751520) |> # weird outliers way off the coast
   filter(year >= 2019) |> # once observations become more consistent
+  tidyr::drop_na(depth) |>
   mutate(log_depth = log(depth))
 
 # A few checks:
 # Zero depths removed
 min(d$depth)
+filter(d0, is.na(depth))
 # Only 7 fishing events in 1999 & 2000
 d0 |> filter(year %in% 1999:2000) |> distinct(fishing_event_id) |> nrow()
 
@@ -40,8 +42,8 @@ sanity(fit)
 fit
 plot_anisotropy(fit)
 
-ggeffects::ggeffect(fit, "log_depth [all]") |> plot()
-ggeffects::ggpredict(fit, terms = "year_f [all]") |> plot()
+# ggeffects::ggeffect(fit, "log_depth [all]") |> plot()
+# ggeffects::ggpredict(fit, terms = "year_f [all]") |> plot()
 
 nd <- data.frame(log_depth = seq(min(d$log_depth), max(d$log_depth), length.out = 200),
                  year_f = "2022")
@@ -73,12 +75,20 @@ g <- g0 |>
   st_drop_geometry() |>
   as_tibble()
 
+# Compare overlap of sampling locations with the SYN/HBLL grid - looks good
+ggplot(data = d, aes(x = X, y = Y)) +
+  geom_point(data = g) +
+  geom_point(aes(colour = survey_series_desc), shape = 21) +
+  guides(colour = "none") +
+  facet_wrap(~ survey_series_desc)
+
+
 # There are some weird depths in the new grids
 g |> filter(depth == 0)
 g |> filter(depth < 0)
 
 g <- filter(g, depth > 0, depth < 1300) # exclude grids less than 0...
-# Also filter out grids that are deeper tha 1300? The original grids were maxed out at 1300
+# Also filter out grids that are deeper than 1300. The original grids were maxed out at 1300
 
 g$log_depth <- log(g$depth)
 g$year_f <- d$year_f[1]
@@ -172,8 +182,11 @@ g2 <- ggplot(bc_coast_proj) + geom_sf() +
 # g2
 
 library(patchwork)
-g_out <- g2 + g1
+# g_out <-
+(g2 + g1) & plot_annotation(tag_levels = "a", tag_suffix = ")") &
+  theme(plot.tag = element_text(vjust = -6, hjust = -1))
 ggsave(here::here("figures", "map.png"), width = 7.5, height = 5)
+ggsave(here::here("figures", "map.pdf"), width = 7.5, height = 5)
 
 ggplot(p, aes(X, Y, fill = est)) +
   geom_tile(width = 2, height = 2) +
@@ -191,7 +204,7 @@ group_by(d, year) |>
   summarise(prop = mean(as.integer(as.character(sarc_presence))), n = n()) |>
   as.data.frame()
 
-# TODO - done?
+# TODO - done
 # - [x] better grid
 # - [x] early years!? all 1s
 # - [x] same depth assignment
