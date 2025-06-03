@@ -6,6 +6,9 @@ library(tidybayes)
 library(patchwork)
 library(flextable)
 
+options(brms.file_refit = "on_change") # re-fit cached models if changes
+dir.create("cache", showWarnings = FALSE)
+
 theme_set(ggsidekick::theme_sleek())
 
 fit_dir <- here::here("data-generated", "models")
@@ -51,65 +54,70 @@ main_spp_dat <- filter(dat, species %in% main_spp$species)
 # Q1: Do immature fish have higher infection rates than mature fish (sarc presence) ~ immature vs mature)
 # Infection rate differences by maturity factor / sex / species
 options(mc.cores = parallel::detectCores() - 2)
-# fit1 <- brm(
-#   sarc_presence ~ 0 + Intercept + maturity_factor * sex +
-#   (1 + maturity_factor * sex | species),
-#   family = bernoulli(),
-#   data = dat,
-#   iter = 4000L,
-#   warmup = 1000L,
-#   chains = 4L,
-#   cores = 4L,
-#   backend = "cmdstanr",
-#   prior = c(prior(normal(0, 5), class = b) +
-#             prior(student_t(3, 0, 2), class = sd) +
-#             prior(normal(0, 10), class = b, coef = Intercept)),
-#   control = list(max_treedepth = 12, adapt_delta = 0.85)
-# )
-# saveRDS(fit1, file.path(fit_dir, "infection-by-maturity-bin-brms-by-species.rds"))
-# beepr::beep()
+fit1 <- brm(
+  sarc_presence ~ 0 + Intercept + maturity_factor * sex +
+  (1 + maturity_factor * sex | species),
+  family = bernoulli(),
+  data = dat,
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L,
+  backend = "cmdstanr",
+  file = "cache/maturity-bin-fit1",
+  prior = c(prior(normal(0, 2), class = b) +
+            prior(student_t(3, 0, 2), class = sd) +
+            prior(normal(0, 10), class = b, coef = Intercept) +
+            prior(lkj(1), class = cor)
+    ),
+  control = list(max_treedepth = 12, adapt_delta = 0.9)
+)
+saveRDS(fit1, file.path(fit_dir, "infection-by-maturity-bin-brms-by-species.rds"))
+beepr::beep()
 fit1 <- readRDS(file.path(fit_dir, "infection-by-maturity-bin-brms-by-species.rds"))
 # plot(fit1)
 
 # Q2: Do immature fish have a higher number of sarcs than mature fish (# sarcs ~ immature vs mature)
 # options(mc.cores = parallel::detectCores() - 2)
-# fit2 <- brm(
-#   sarc_count ~ 0 + Intercept + maturity_factor * sex +
-#     (1 + maturity_factor * sex | species),
-#   family = negbinomial(),
-#   data = dat,
-#   iter = 4000L,
-#   warmup = 1000L,
-#   chains = 4L,
-#   cores = 4L,
-#   backend = "cmdstanr",
-#   prior = c(prior(normal(0, 5), class = b) +
-#             prior(student_t(3, 0, 2), class = sd) +
-#             prior(normal(0, 10), class = b, coef = Intercept)),
-#   control = list(max_treedepth = 12, adapt_delta = 0.85)
-# )
-# beepr::beep()
-# saveRDS(fit2, file.path(fit_dir, "sarc-count-by-immature-mature-brms.rds"))
+fit2 <- brm(
+  sarc_count ~ 0 + Intercept + maturity_factor * sex +
+    (1 + maturity_factor * sex | species),
+  family = negbinomial(),
+  data = dat,
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L,
+  file = "cache/maturity-bin-fit2",
+  backend = "cmdstanr",
+  prior = c(prior(normal(0, 2), class = b) +
+            prior(student_t(3, 0, 2), class = sd) +
+            prior(normal(0, 10), class = b, coef = Intercept)),
+  control = list(max_treedepth = 12, adapt_delta = 0.9)
+)
+beepr::beep()
+saveRDS(fit2, file.path(fit_dir, "sarc-count-by-immature-mature-brms.rds"))
 fit2 <- readRDS(file.path(fit_dir, "sarc-count-by-immature-mature-brms.rds"))
 # plot(fit2)
 
 # Q3: Does infection rate differ across maturity bins (1 through 7)
-# fit3 <- brm(
-#   sarc_presence ~ 0 + Intercept + maturity_bin * sex,
-#   family = bernoulli(),
-#   data = dat,
-#   iter = 4000L,
-#   warmup = 1000L,
-#   chains = 4L,
-#   cores = 4L,
-#   backend = "cmdstanr",
-#   prior = c(prior(normal(0, 5), class = b) +
-#             # prior(student_t(3, 0, 2), class = sd) +
-#             prior(normal(0, 10), class = b, coef = Intercept)),
-#   control = list(max_treedepth = 12, adapt_delta = 0.85)
-# )
-# beepr::beep()
-# saveRDS(fit3, file.path(fit_dir, "infection-by-maturity-bin-brms.rds"))
+fit3 <- brm(
+  sarc_presence ~ 0 + Intercept + maturity_bin * sex,
+  family = bernoulli(),
+  data = dat,
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L,
+  backend = "cmdstanr",
+  file = "cache/maturity-bin-fit3",
+  prior = c(prior(normal(0, 2), class = b) +
+            # prior(student_t(3, 0, 2), class = sd) +
+            prior(normal(0, 10), class = b, coef = Intercept)),
+  control = list(max_treedepth = 12, adapt_delta = 0.9)
+)
+beepr::beep()
+saveRDS(fit3, file.path(fit_dir, "infection-by-maturity-bin-brms.rds"))
 fit3 <- readRDS(file.path(fit_dir, "infection-by-maturity-bin-brms.rds"))
 # plot(fit3)
 
@@ -120,15 +128,16 @@ fit3b <- brm(
     (1 + maturity_bin2 * sex | species),
   family = bernoulli(),
   data = main_spp_dat,
-  iter = 4000L,
+  iter = 2000L,
   warmup = 1000L,
   chains = 4L,
   cores = 4L,
+  file = "cache/maturity-bin-fit3b2",
   backend = "cmdstanr",
   prior = c(prior(normal(0, 5), class = b) +
             prior(student_t(3, 0, 2), class = sd) +
             prior(normal(0, 10), class = b, coef = Intercept)),
-  control = list(max_treedepth = 12, adapt_delta = 0.95)
+  control = list(max_treedepth = 12, adapt_delta = 0.99)
 )
 beepr::beep()
 saveRDS(fit3b, file.path(fit_dir, "infection-by-maturity-bin-collapsed4-5-brms.rds"))
