@@ -15,6 +15,8 @@ library(patchwork)
 theme_set(ggsidekick::theme_sleek())
 
 fit_dir <- here::here("data-generated", "models")
+options(brms.file_refit = "on_change") # re-fit cached models if changes
+dir.create("cache", showWarnings = FALSE)
 
 e_table <- readRDS(here::here("data-generated", "encounter-spp-table-systematic-years.rds"))
 main_spp <- e_table |>
@@ -94,31 +96,33 @@ main_spp <- e_table |>
 # -------------------
 ld <- readRDS("data-generated/length-dat.rds") |>
   filter(sex %in% c("female", "male"))
-# options(mc.cores = parallel::detectCores() - 2)
-# fit_1f <- brm(
-#   mature ~ 0 + Intercept + length_std * sarc_presence +
-#     (1 + length_std * sarc_presence | species),
-#   family = bernoulli(),
-#   data = ld |> filter(sex == "female"),
-#   iter = 4000L,
-#   warmup = 1000L,
-#   chains = 4L,
-#   cores = 4L,
-#   backend = "cmdstanr",
-#   prior =
-#     prior(normal(0, 5), class = b) +
-#     prior(student_t(3, 0, 2), class = sd) +
-#     prior(normal(0, 10), class = b, coef = Intercept),
-#   control = list(max_treedepth = 12, adapt_delta = 0.9)
-# )
-# dir.create("data-generated", showWarnings = FALSE)
-# saveRDS(fit_1f, file.path(fit_dir, "maturity-length-stan-female.rds"))
-# beepr::beep()
+options(mc.cores = parallel::detectCores() - 2)
+fit_1f <- brm(
+  mature ~ 0 + Intercept + length_std * sarc_presence +
+    (1 + length_std * sarc_presence | species),
+  family = bernoulli(),
+  data = ld |> filter(sex == "female"),
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L,
+  backend = "cmdstanr",
+  file = "cache/length-fit1f",
+  seed = 293829,
+  prior =
+    prior(normal(0, 2), class = b) +
+    prior(student_t(3, 0, 2), class = sd) +
+    prior(normal(0, 10), class = b, coef = Intercept),
+  control = list(max_treedepth = 12, adapt_delta = 0.8)
+)
+dir.create("data-generated", showWarnings = FALSE)
+saveRDS(fit_1f, file.path(fit_dir, "maturity-length-stan-female.rds"))
+beepr::beep()
 fit_1f <- readRDS(file.path(fit_dir, "maturity-length-stan-female.rds"))
 
 # options(mc.cores = parallel::detectCores() - 2)
-# fit_1m <- update(fit_1f, newdata = ld |> filter(sex == "male"))
-# saveRDS(fit_1m, file.path(fit_dir, "maturity-length-stan-male.rds"))
+fit_1m <- update(fit_1f, newdata = ld |> filter(sex == "male"))
+saveRDS(fit_1m, file.path(fit_dir, "maturity-length-stan-male.rds"))
 # beepr::beep()
 fit_1m <- readRDS(file.path(fit_dir, "maturity-length-stan-male.rds"))
 
@@ -232,6 +236,7 @@ post_spp |>
   geom_linerange() + ggsidekick::theme_sleek() +
   xlab("Coefficient estimate") + theme(axis.title.y.left = element_blank())
 ggsave(here::here("figures", "maturity-length-species-coef.png"))
+ggsave(here::here("figures", "maturity-length-species-coef.pdf"))
 
 
 get_variables(fit_1f) # get variable names
@@ -299,27 +304,41 @@ nd_m_spp$est <- apply(p_m, 2, median)
 nd_m_spp$upr <- apply(p_m, 2, quantile, probs = 0.95)
 
 out_spp <- bind_rows(nd_f_spp, nd_m_spp) |> as_tibble()
-out_spp |>
-  mutate(sarc_pres_label = factor(sarc_presence, levels = c(0, 1), labels = c("No", "Yes"))) |>
-ggplot(aes(x = fork_length, y = plogis(est),
-           colour = sarc_pres_label, fill = sarc_pres_label)) +
-  facet_grid(sex ~ stringr::str_to_title(species)) +
-  geom_ribbon(aes(ymin = plogis(lwr), ymax = plogis(upr)), colour = NA, alpha = 0.3) +
-  geom_line() +
-  coord_cartesian(expand = FALSE, xlim = c(50, 750), ylim = c(-0.08, 1.08)) +
-  geom_segment(data = ld |> filter(mature == 1),
-    mapping = aes(x = fork_length, y = 1.01 + 0.03 * sarc_presence, yend = 1.04 + 0.03 * sarc_presence),
-    alpha = 0.6, position = position_dodge2(width = 0.5)) +
-  geom_segment(data = ld |> filter(mature == 0),
-    mapping = aes(x = fork_length, y = -0.04 - 0.03 * sarc_presence, yend = -0.01 - 0.03 * sarc_presence),
-    alpha = 0.6, position = position_dodge2(width = 0.5)) +
-  labs(x = "Fork length (mm)", y = "Probability of maturity",
-       colour = "*Sarcotaces* sp. present", fill = "*Sarcotaces* sp. present") +
-  theme(legend.title = ggtext::element_markdown()) +
-  scale_fill_manual(values = c("No" = "grey50", "Yes" = "red")) +
-  scale_colour_manual(values = c("No" = "grey50", "Yes" = "red")) +
-  theme(legend.position = "top")
-ggsave(here::here("figures", "maturity-length-ogive-by-species.png"), width = 14, height = 5.5)
+
+make_fig <- function(dat) {
+  .ld <- filter(ld, species %in% dat$species)
+  dat |>
+    mutate(sarc_pres_label = factor(sarc_presence, levels = c(0, 1), labels = c("No", "Yes"))) |>
+    ggplot(aes(x = fork_length, y = plogis(est),
+      colour = sarc_pres_label, fill = sarc_pres_label)) +
+    facet_grid(stringr::str_to_title(species)~sex) +
+    geom_ribbon(aes(ymin = plogis(lwr), ymax = plogis(upr)), colour = NA, alpha = 0.3) +
+    geom_line() +
+    coord_cartesian(expand = FALSE, xlim = c(50, 750), ylim = c(-0.08, 1.08)) +
+    geom_segment(data = .ld |> filter(mature == 1),
+      mapping = aes(x = fork_length, y = 1.01 + 0.03 * sarc_presence, yend = 1.04 + 0.03 * sarc_presence),
+      alpha = 0.6, position = position_dodge2(width = 0.5)) +
+    geom_segment(data = .ld |> filter(mature == 0),
+      mapping = aes(x = fork_length, y = -0.04 - 0.03 * sarc_presence, yend = -0.01 - 0.03 * sarc_presence),
+      alpha = 0.6, position = position_dodge2(width = 0.5)) +
+    labs(x = "Fork length (mm)", y = "Probability of maturity",
+      colour = "*Sarcotaces* sp. present", fill = "*Sarcotaces* sp. present") +
+    theme(legend.title = ggtext::element_markdown()) +
+    scale_fill_manual(values = c("No" = "grey50", "Yes" = "red")) +
+    scale_colour_manual(values = c("No" = "grey50", "Yes" = "red")) +
+    theme(legend.position = "top")
+    # scale_y_continuous(breaks = c(0, 0.5, 1))
+}
+
+sp1 <- unique(out_spp$species)[1:5]
+sp2 <- unique(out_spp$species)[6:10]
+g1 <- out_spp |> filter(species %in% sp1) |> make_fig()
+g2 <- out_spp |> filter(species %in% sp2) |> make_fig()
+
+g1 + g2 + plot_layout(axes = "collect", guides = "collect") & theme(legend.position = "top")
+
+# ggsave(here::here("figures", "maturity-length-ogive-by-species.png"), width =3.5, height = 10)
+ggsave(here::here("figures", "maturity-length-ogive-by-species.pdf"), width = 8.5, height = 8.5)
 
 # --------------------------
 # Compare expected length when probability of maturity > 0.5

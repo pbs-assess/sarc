@@ -12,6 +12,9 @@ library(patchwork)
 
 theme_set(ggsidekick::theme_sleek())
 
+options(brms.file_refit = "on_change") # re-fit cached models if changes
+dir.create("cache", showWarnings = FALSE)
+
 fit_dir <- here::here("data-generated", "models")
 
 # Maturity ~ Sarc Presence
@@ -115,8 +118,10 @@ fit_1f <- brm(
   mature ~ 0 + Intercept + age_std + sarc_presence,
   family = bernoulli(),
   data = ad |> filter(sex == "female"),
-  iter = 4000L,
+  iter = 2000L,
   warmup = 1000L,
+  seed = 24821,
+  file = "cache/age-fit1f",
   chains = 4L,
   cores = 4L,
   backend = "cmdstanr",
@@ -126,40 +131,39 @@ fit_1f <- brm(
   control = list(max_treedepth = 12, adapt_delta = 0.97)
 )
 # beepr::beep()
-# saveRDS(fit_1f, file.path(fit_dir, "maturity-age-stan-model-female.rds"))
+saveRDS(fit_1f, file.path(fit_dir, "maturity-age-stan-model-female.rds"))
 fit_1f <- readRDS(file.path(fit_dir, "maturity-age-stan-model-female.rds"))
 
-# fit_1m <- update(fit_1f, newdata = ad |> filter(sex == "male"))
-# saveRDS(fit_1m, file.path(fit_dir, "maturity-age-stan-model-male.rds"))
+fit_1m <- update(fit_1f, newdata = ad |> filter(sex == "male"))
+saveRDS(fit_1m, file.path(fit_dir, "maturity-age-stan-model-male.rds"))
 # beepr::beep()
 fit_1m <- readRDS(file.path(fit_dir, "maturity-age-stan-model-male.rds"))
 
-
 # Including species level effects - doesn't converge anymore after cleaning up data
-fit_2f <- brm(
-  mature ~ 0 + Intercept + (age_std + sarc_presence) +
-    (1 + age_std + sarc_presence | species),
-  family = bernoulli(),
-  data = ad |> filter(sex == "female"),
-  iter = 4000L,
-  warmup = 1000L,
-  chains = 4L,
-  cores = 4L,
-  backend = "cmdstanr",
-  prior =
-    prior(normal(0, 5), class = b) +
-    prior(student_t(3, 0, 2), class = sd) +
-    prior(normal(0, 10), class = b, coef = Intercept),
-  control = list(max_treedepth = 12, adapt_delta = 0.97)
-)
-beepr::beep()
-saveRDS(fit_2f, file.path(fit_dir, "maturity-age-stan-model-female-by-species.rds"))
-fit_2f <- readRDS(file.path(fit_dir, "maturity-age-stan-model-female-by-species.rds"))
+# fit_2f <- brm(
+#   mature ~ 0 + Intercept + (age_std + sarc_presence) +
+#     (1 + age_std + sarc_presence | species),
+#   family = bernoulli(),
+#   data = ad |> filter(sex == "female"),
+#   iter = 4000L,
+#   warmup = 1000L,
+#   chains = 4L,
+#   cores = 4L,
+#   backend = "cmdstanr",
+#   prior =
+#     prior(normal(0, 5), class = b) +
+#     prior(student_t(3, 0, 2), class = sd) +
+#     prior(normal(0, 10), class = b, coef = Intercept),
+#   control = list(max_treedepth = 12, adapt_delta = 0.97)
+# )
+# beepr::beep()
+# saveRDS(fit_2f, file.path(fit_dir, "maturity-age-stan-model-female-by-species.rds"))
+# fit_2f <- readRDS(file.path(fit_dir, "maturity-age-stan-model-female-by-species.rds"))
 
 # fit_2m <- update(fit_2f, newdata = ad |> filter(sex == "male"))
 # saveRDS(fit_2m, file.path(fit_dir, "maturity-age-stan-model-male-by-species.rds"))
 # beepr::beep()
-fit_2m <- readRDS(file.path(fit_dir, "maturity-age-stan-model-male-by-species.rds"))
+# fit_2m <- readRDS(file.path(fit_dir, "maturity-age-stan-model-male-by-species.rds"))
 
 # ------------------------
 # Prior checking

@@ -503,27 +503,27 @@ count_q
 # -----
 # better understand prior predictive checking
 # -----
-# fitf <- brm(
-#   # sarc_count ~ 0 + Intercept + maturity_bin * sex +
-#   #   (1 + maturity_bin * sex | species),
-#   sarc_count ~ 0 + Intercept + maturity_bin +
-#     (1 + maturity_bin | species),
-#   family = zero_inflated_poisson(),
-#   data = dat |> filter(sex == "female"),
-#   iter = 2000L,
-#   warmup = 500L,
-#   chains = 4L,
-#   cores = 4L,
-#   backend = "cmdstanr",
-#   prior = c(prior(normal(0, 5), class = b) +
-#             prior(student_t(3, 0, 2), class = sd) +
-#             prior(normal(0, 5), class = b, coef = Intercept) +
-#             prior(beta(3, 1), class = zi)),  # the brms default is beta(1, 1)
-#     # prior(normal(0, 5), class = b) +
-#     # prior(student_t(3, 0, 2), class = sd) +
-#     # prior(normal(0, 10), class = b, coef = Intercept),
-#   control = list(max_treedepth = 12, adapt_delta = 0.95)
-# )
+fitf <- brm(
+  # sarc_count ~ 0 + Intercept + maturity_bin * sex +
+  #   (1 + maturity_bin * sex | species),
+  sarc_count ~ 0 + Intercept + maturity_bin +
+    (1 + maturity_bin | species),
+  family = zero_inflated_poisson(),
+  data = dat |> filter(sex == "female"),
+  iter = 2000L,
+  warmup = 500L,
+  chains = 4L,
+  cores = 4L,
+  backend = "cmdstanr",
+  prior = c(prior(normal(0, 2), class = b) +
+            prior(student_t(3, 0, 2), class = sd) +
+            prior(normal(0, 5), class = b, coef = Intercept) +
+            prior(beta(3, 1), class = zi)),  # the brms default is beta(1, 1)
+    # prior(normal(0, 5), class = b) +
+    # prior(student_t(3, 0, 2), class = sd) +
+    # prior(normal(0, 10), class = b, coef = Intercept),
+  control = list(max_treedepth = 12, adapt_delta = 0.95)
+)
 # beepr::beep()
 # saveRDS(fitf, file.path(fit_dir, "sarc-number-by-group-brms-zinp-female.rds"))
 # fitf <- readRDS(file.path(fit_dir, "sarc-number-by-group-brms-zinp-female.rds"))
