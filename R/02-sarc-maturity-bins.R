@@ -134,7 +134,8 @@ fit3b <- brm(
   cores = 4L,
   file = "cache/maturity-bin-fit3b2",
   backend = "cmdstanr",
-  prior = c(prior(normal(0, 5), class = b) +
+  seed = 9382919,
+  prior = c(prior(normal(0, 2), class = b) +
             prior(student_t(3, 0, 2), class = sd) +
             prior(normal(0, 10), class = b, coef = Intercept)),
   control = list(max_treedepth = 12, adapt_delta = 0.99)
