@@ -121,7 +121,7 @@ beepr::beep()
 fit_1f <- readRDS(file.path(fit_dir, "maturity-length-stan-female.rds"))
 
 # options(mc.cores = parallel::detectCores() - 2)
-fit_1m <- update(fit_1f, newdata = ld |> filter(sex == "male"))
+fit_1m <- update(fit_1f, newdata = ld |> filter(sex == "male"), file = "cache/length-fit1m")
 saveRDS(fit_1m, file.path(fit_dir, "maturity-length-stan-male.rds"))
 # beepr::beep()
 fit_1m <- readRDS(file.path(fit_dir, "maturity-length-stan-male.rds"))

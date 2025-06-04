@@ -263,6 +263,7 @@ lpd1 |>
   ) +
   xlim(c(0, 0.21))
 ggsave(here::here("figures", "maturity-factor-by-species.png"), width = 5.5, height = 5.4)
+ggsave(here::here("figures", "maturity-factor-by-species.pdf"), width = 5.5, height = 5.4)
 
 lpd_wide1 <- lpd1 |>
   ungroup() |>

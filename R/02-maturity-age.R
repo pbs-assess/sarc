@@ -323,6 +323,7 @@ ggplot(aes(x = specimen_age, y = plogis(est),
   scale_colour_manual(values = c("No" = "grey50", "Yes" = "red")) +
   theme(legend.position = "top")
 ggsave(here::here("figures", "maturity-age-overall-ogive.png"), width = 8, height = 4)
+ggsave(here::here("figures", "maturity-age-overall-ogive.pdf"), width = 8, height = 4)
 
 # --------
 # Species-level
