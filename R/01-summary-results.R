@@ -69,7 +69,7 @@ p <- ggplot(mapping = aes(x = fspecies, y = depth)) +
   geom_point(data = d1, aes(x = fspecies), shape = 95, colour = "black", size = 2,
     position = position_nudge(x = 0.05)) +
   labs(x = "Rockfish species", y = "Depth (m)") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
         plot.margin = margin(t = 10, r = 1, b = 1, l = 10))
 
 p

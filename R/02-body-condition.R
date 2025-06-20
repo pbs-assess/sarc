@@ -180,25 +180,25 @@ cdat <-
          species = factor(species),
          weight_kg = weight / 1000)
 
-ggplot(data = cdat, mapping = aes(x = weight_kg, y = predicted_weight, color = factor(sarc_presence))) +
+ggplot(data = cdat, mapping = aes(x = weight_kg, y = predicted_weight, colour = factor(sarc_presence))) +
   geom_point(data = cdat |> filter(sarc_presence == 0), shape = 21, alpha = 0.5) +
   geom_point(data = cdat |> filter(sarc_presence == 1), shape = 21, alpha = 0.8) +
   geom_abline(intercept = 0, slope = 1) +
   facet_wrap(~ species + sex, scales = "free", labeller = labeller(.default = str_to_title), nrow = 4) +
-  scale_color_manual(values = c("black", "red"))
+  scale_colour_manual(values = c("black", "red"))
 
 cdat_modified <- cdat |>
   mutate(
-    point_color = case_when(
+    point_colour = case_when(
       sarc_presence == 1          ~ "Infected",
       sarc_presence == 0 & sex == 'female' ~ "Female",
       sarc_presence == 0 & sex == 'male'   ~ "Male",
       TRUE ~ NA_character_
     ),
-    point_color = factor(point_color, levels = c("Female", "Male", "Infected"))
+    point_colour = factor(point_colour, levels = c("Female", "Male", "Infected"))
   )
 
-ggplot(data = cdat_modified, aes(x = weight_kg, y = predicted_weight, color = point_color)) +
+ggplot(data = cdat_modified, aes(x = weight_kg, y = predicted_weight, colour = point_colour)) +
   geom_point(shape = 21, alpha = 0.7) +
   geom_point(data = cdat_modified |> filter(sarc_presence == 1), shape = 21, alpha = 0.8, fill = "red") +
   geom_abline(intercept = 0, slope = 1) +
@@ -213,7 +213,7 @@ ggplot(data = cdat_modified, aes(x = weight_kg, y = predicted_weight, color = po
         ), by_layer_x = TRUE
     )
   ) +
-  scale_color_manual(
+  scale_colour_manual(
     name = "Status", # A more informative legend title
     values = c("Female" = "black", "Male" = "grey40", "Infected" = "red")
   ) +
@@ -224,10 +224,10 @@ ggplot(data = cdat_modified, aes(x = weight_kg, y = predicted_weight, color = po
 glimpse(cdat)
 
 ggplot(data = cdat, aes(x = log_condition)) +
-  geom_density(aes(fill = factor(sarc_presence), color = factor(sarc_presence)), alpha = 0.5) +
+  geom_density(aes(fill = factor(sarc_presence), colour = factor(sarc_presence)), alpha = 0.5) +
   facet_wrap(~ species + sex, scales = "free", labeller = labeller(.default = str_to_title), nrow = 4) +
   scale_fill_manual(values = c("black", "red")) +
-  scale_color_manual(values = c("black", "red"))
+  scale_colour_manual(values = c("black", "red"))
 
 # fit <- brm(
 #   log(condition) ~ 0 + Intercept + sarc_presence * sex +
@@ -282,7 +282,7 @@ mcmc_plot(
   regex_pars = "^b_",
   prob = 0.95 # Shaded area is the 95% CI
 ) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "red")
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "red")
 
 # Fixed effects
 post_f <- fit_f |>
@@ -346,16 +346,16 @@ post_all |>
   ggplot() +
   aes(x = combined, y = species, colour = sex, fill = sex) +
   geom_rect(aes(ymin = -Inf, ymax = 1.5, xmin = -Inf, xmax = Inf),
-                      fill = "grey92", color = NA, inherit.aes = FALSE) +
+                      fill = "grey92", colour = NA, inherit.aes = FALSE) +
   facet_wrap(~ term, scale = "free_x") +
   geom_vline(data = distinct(post_all, term) |> mutate(combined = ifelse(term == "Intercept", NA, 0)),
     aes(xintercept = combined), colour = "grey50", linetype = "dotted") +
   ggdist::stat_pointinterval(.width = c(0.5, 0.95),
     size = 2, linewidth = 1,
     position = ggstance::position_dodgev(height = -0.3)) +
-  scale_color_manual(values = c("Female" = "black", "Male" = "grey60")) +
+  scale_colour_manual(values = c("Female" = "black", "Male" = "grey60")) +
   scale_fill_manual(values = c("Female" = "black", "Male" = "grey60")) +
-  guides(color = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
+  guides(colour = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
   ggsidekick::theme_sleek(base_size = 12) +
   xlab("Coefficient estimate") +
   theme(axis.title.y.left = element_blank(),
@@ -413,7 +413,7 @@ ggplot(pp, aes(condition, .prediction)) +
   geom_point(aes(colour = sarc_presence), shape = 21, alpha = 0.5) +
   facet_wrap(~.draw) +
   scale_x_log10() +
-  scale_color_manual(values = c("grey", "red")) +
+  scale_colour_manual(values = c("grey", "red")) +
   ggtitle("Posterior predictive simulation")
 
 
