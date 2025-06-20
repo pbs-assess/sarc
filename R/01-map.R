@@ -185,8 +185,8 @@ library(patchwork)
 # g_out <-
 (g2 + g1) & plot_annotation(tag_levels = "a", tag_suffix = ")") &
   theme(plot.tag = element_text(vjust = -6, hjust = -1))
-ggsave(here::here("figures", "map.png"), width = 7.5, height = 5)
 ggsave(here::here("figures", "map.pdf"), width = 7.5, height = 5)
+# ggsave(here::here("figures", "map.png"), width = 7.5, height = 5)
 
 ggplot(p, aes(X, Y, fill = est)) +
   geom_tile(width = 2, height = 2) +

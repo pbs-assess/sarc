@@ -74,9 +74,9 @@ p <- ggplot(mapping = aes(x = fspecies, y = depth)) +
 
 p
 ggsave(filename = here::here("figures", paste0("depth-plot.pdf")),
-  width = 7.6, height = 6)
-ggsave(filename = here::here("figures", paste0("depth-plot.png")),
-  width = 7.6, height = 6)
+  width = 18.2 / cm(1), height = 5.6)
+# ggsave(filename = here::here("figures", paste0("depth-plot.png")),
+#   width = 18.2 / cm(1), height = 5.6)
 
 
 # Frequency of cyst counts across species
@@ -114,5 +114,5 @@ ggplot() +
     y = "Species"
   )
 
-ggsave(here::here("figures", "diff-sarc-count-by-species.png"), width = 5.5, height = 4.9)
 ggsave(here::here("figures", "diff-sarc-count-by-species.pdf"), width = 5.5, height = 4.9)
+# ggsave(here::here("figures", "diff-sarc-count-by-species.png"), width = 5.5, height = 4.9)

@@ -9,11 +9,13 @@ library(tidybayes)
 
 library(patchwork)
 
-theme_set(ggsidekick::theme_sleek(base_size = 12))
+# theme_set(ggsidekick::theme_sleek(base_size = 12))
+theme_set(ggsidekick::theme_sleek())
 
 fit_dir <- here::here("data-generated", "models")
 options(brms.file_refit = "on_change") # re-fit cached models if changes
 dir.create("cache", showWarnings = FALSE)
+dir.create("figures", showWarnings = FALSE)
 
 e_table <- readRDS(here::here("data-generated", "encounter-spp-table-systematic-years.rds"))
 main_spp <- e_table |>
@@ -65,19 +67,6 @@ post_fe <- bind_rows(post_1f, post_1m) |>
          term = gsub("sarc_presence", "Infection", term)) |>
   mutate(term = factor(term, levels = c("Intercept", "Length", "Infection", "Length:Infection")))
 
-# pd_length_fe <- post_fe |>
-#   ggplot(aes(x = fe_coef)) +
-#   facet_grid(term ~ sex) +
-#   geom_vline(xintercept = 0) +
-#   ggsidekick::theme_sleek(base_size = 10) +
-#   geom_density(fill = "grey90") +
-#   # facet_wrap(~ term, ncol = 1) +
-#   coord_cartesian(xlim = c(-3, 6), ylim = c(0, 1.7), expand = FALSE) +
-#   xlab("Coefficient estimate") + ylab("Posterior density") +
-#   theme(strip.clip = "off")
-# pd_length_fe
-# ggsave(here::here("figures", "maturity-length-posterior-densities.png"), width = 4.4, height = 3.8)
-
 # Species effects
 post_re_1f <- fit_1f |> spread_draws(r_species[species, term]) |>
   mutate(sex = "female")
@@ -88,11 +77,6 @@ post <- bind_rows(post_re_1f, post_re_1m) |>
   mutate(term = gsub("length_std", "Length", term),
          term = gsub("sarc_presence", "Infection", term)) |>
   mutate(term = factor(term, levels = c("Intercept", "Length", "Infection", "Length:Infection")))
-
-# ggplot(post, aes(x = r_species, y = term)) +
-#   facet_wrap(~ sex) +
-#   geom_vline(xintercept = 0) +
-#   stat_halfeye()
 
 post_spp <- left_join(post_fe, post) |>
   mutate(combined = r_species + fe_coef) |>
@@ -107,22 +91,23 @@ post_spp |>
   ggplot() +
   aes(x = combined, y = species, colour = sex, fill = sex) +
   facet_wrap(~ term, scale = "free_x") +
-  geom_vline(xintercept = 0, colour = "grey50", linetype = "dotted") +
-  # ggdist::stat_halfeye(.width = c(.5, .95), trim = TRUE, alpha = 0.5, size = 2,
-    # linewidth = 1, position = ggstance::position_dodgev(height = 0.4)) +
+  geom_vline(data = distinct(post_spp, term) |>
+    mutate(xint = ifelse(term == "Length", NA, 0)) |>
+    filter(term != "Intercept"),
+    aes(xintercept = xint), colour = "grey50", linetype = "dotted") +
   ggdist::stat_pointinterval(.width = c(0.95),
     size = 2, linewidth = 1,
     position = ggstance::position_dodgev(height = -0.5)) +
   scale_color_manual(values = c("Female" = "black", "Male" = "grey60")) +
   scale_fill_manual(values = c("Female" = "black", "Male" = "grey60")) +
-  guides(color = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
+  guides(colour = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
   ggsidekick::theme_sleek(base_size = 12) +
   xlab("Coefficient estimate") +
   theme(axis.title.y.left = element_blank(),
         legend.position = "top",
         legend.text = element_text(size = 11))
-ggsave(here::here("figures", "maturity-length-species-coef.png"), width = 7.1, height = 5.5)
-ggsave(here::here("figures", "maturity-length-species-coef.pdf"), width = 7.1, height = 5.5)
+ggsave(here::here("figures", "length-species-coef.pdf"), width = 7.1, height = 5.5)
+# ggsave(here::here("figures", "length-species-coef.png"), width = 7.1, height = 5.5)
 
 # ------------------------------------------------------------
 # Plot length ogives
@@ -156,7 +141,7 @@ nd_m_mean <- get_pp_summary(fit_1m, newdata = nd_m, re_formula = NA)
 
 out <- bind_rows(nd_f_mean, nd_m_mean) |> as_tibble()
 
-out |>
+length_ogive <- out |>
   mutate(sarc_pres_label = factor(sarc_presence, levels = c(0, 1), labels = c("No", "Yes"))) |>
 ggplot(aes(x = fork_length, y = plogis(est),
            colour = sarc_pres_label, fill = sarc_pres_label)) +
@@ -164,6 +149,7 @@ ggplot(aes(x = fork_length, y = plogis(est),
   geom_ribbon(aes(ymin = plogis(lwr), ymax = plogis(upr)), colour = NA, alpha = 0.3) +
   geom_line() +
   coord_cartesian(expand = FALSE, xlim = c(50, 750), ylim = c(-0.08, 1.08)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 5)) +
   geom_segment(data = ld |> filter(mature == 1),
     mapping = aes(x = fork_length, y = 1.01 + 0.03 * sarc_presence, yend = 1.04 + 0.03 * sarc_presence),
     alpha = 0.6, position = position_dodge2(width = 0.5)) +
@@ -175,9 +161,13 @@ ggplot(aes(x = fork_length, y = plogis(est),
   theme(legend.title = ggtext::element_markdown()) +
   scale_fill_manual(values = c("No" = "grey50", "Yes" = "red")) +
   scale_colour_manual(values = c("No" = "grey50", "Yes" = "red")) +
-  theme(legend.position = "top")
-ggsave(here::here("figures", "maturity-length-ogive.png"), width = 7.1, height = 4.1)
-ggsave(here::here("figures", "maturity-length-ogive.pdf"), width = 7.1, height = 4.1)
+  theme(legend.position = "top",
+        legend.margin = margin(t = 0, r = 0, b = -5, l = 0),
+        strip.text = element_text(size = 10))
+ggsave(here::here("figures", "length-ogive.pdf"), width = 7.1, height = 4.1)
+# ggsave(here::here("figures", "length-ogive.png"), width = 7.1, height = 4.1)
+
+saveRDS(length_ogive, here::here("data-generated", "length-ogive-ggplot.rds"))
 
 # ----
 # Species-level
@@ -218,8 +208,8 @@ g2 <- out_spp |> filter(species %in% sp2) |> make_fig()
 
 g1 + g2 + plot_layout(axes = "collect", guides = "collect") & theme(legend.position = "top")
 
-# ggsave(here::here("figures", "maturity-length-ogive-by-species.png"), width =3.5, height = 10)
-ggsave(here::here("figures", "maturity-length-ogive-by-species.pdf"), width = 8.5, height = 8.5)
+# ggsave(here::here("figures", "length-ogive-by-species.png"), width =3.5, height = 10)
+ggsave(here::here("figures", "length-ogive-by-species.pdf"), width = 8.5, height = 8.5)
 
 # ------------------------------------------------------------
 # Compare expected length when probability of maturity > 0.5
@@ -273,15 +263,15 @@ plot_p50_diff <- function(data, x_limits = c(-100, 100)) {
   p <- ggplot()
   if ("population" %in% tolower(dat$species)) {
     p <- p + geom_rect(aes(ymin = -Inf, ymax = 1.5, xmin = -Inf, xmax = Inf),
-                      fill = "grey92", color = NA, inherit.aes = FALSE)
+                       fill = "grey92", colour = NA, inherit.aes = FALSE)
   }
 
   p <- p +
     geom_vline(xintercept = 0, colour = "grey50", linetype = "dotted") +
     ggdist::stat_pointinterval(data = dat, aes(x = diff, y = species, colour = sex, fill = sex),
-      .width = c(0.5, 0.95),
-      point_size = 2,
-      position = ggstance::position_dodgev(height = -0.5)) +
+                               .width = c(0.5, 0.95),
+                               point_size = 2,
+                               position = ggstance::position_dodgev(height = -0.5)) +
     theme(axis.title.y.left = element_blank()) +
     ggsidekick::theme_sleek(base_size = 12) +
     xlab("Difference in length at 50% maturity<br>if infected with *Sarcotaces* sp.<br>(mm)") +
@@ -289,7 +279,7 @@ plot_p50_diff <- function(data, x_limits = c(-100, 100)) {
     ylab("") +
     scale_color_manual(values = c("Female" = "black", "Male" = "grey60")) +
     scale_fill_manual(values = c("Female" = "black", "Male" = "grey60")) +
-    guides(color = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
+    guides(colour = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
     scale_x_continuous(limits = x_limits, oob = scales::squish) +
     theme(legend.position = "top",
           legend.text = element_text(size = 10))
@@ -298,14 +288,16 @@ plot_p50_diff <- function(data, x_limits = c(-100, 100)) {
 
 # Plot all species
 plot_p50_diff(p50_diff)
-ggsave(here::here("figures", "maturity-length-p50-by-species.png"), width = 4.7, height = 6.7)
-ggsave(here::here("figures", "maturity-length-p50-by-species.pdf"), width = 4.7, height = 6.7)
+p_p50
+ggsave(here::here("figures", "length-p50-by-species.pdf"), width = 4.7, height = 6.7)
+# ggsave(here::here("figures", "length-p50-by-species.png"), width = 4.7, height = 6.7)
 
-# Plot main species with highlighting
+# Plot main species
 plot_p50_diff(p50_diff |> filter(species %in% c(main_spp$species, "population")),
   x_limits = c(-60, 60))
-ggsave(here::here("figures", "maturity-length-p50-by-main-species.png"), width = 4.4, height = 5.2)
-ggsave(here::here("figures", "maturity-length-p50-by-main-species.pdf"), width = 4.4, height = 5.2)
+p_p50_main
+ggsave(here::here("figures", "length-p50-by-main-species.pdf"), width = 4.4, height = 5.2)
+# ggsave(here::here("figures", "length-p50-by-main-species.png"), width = 4.4, height = 5.2)
 
 # Reference table for values in text
 p50_diff_tab <- p50_diff_summary |>
@@ -339,12 +331,8 @@ ppc_stat_grouped(y = y_obs_f, yrep = yrep_f, group = fit_1f$data$species, stat =
 
 # Compare simulated mean expectations with observed maturity proportions
 plot_sim_mat <- function(fit, ld, sex = c("female", "male"), prior_only = FALSE,
-  n_draws = 10) {
-
+  n_draws = 9, seed = 714) {
   sex <- match.arg(sex)
-
-  # pp_f <- posterior_predict(fit_1f, ndraws = 20, re_formula = NULL)
-  # pp_m <- posterior_predict(fit_1m, ndraws = 20, re_formula = NULL)
   breaks <- seq(min(ld$fork_length, na.rm = TRUE), max(ld$fork_length, na.rm = TRUE), length.out = 100)
 
   # Observed
@@ -366,7 +354,8 @@ plot_sim_mat <- function(fit, ld, sex = c("female", "male"), prior_only = FALSE,
         select(sex, species, fork_length, sarc_presence, length_std) |>
         mutate(fork_length_bin = cut(fork_length, breaks = breaks, include.lowest = TRUE)),
       re_formula = NULL,
-      ndraws = 10
+      ndraws = n_draws,
+      seed = seed
     ) |>
     mutate(fork_length_bin = cut(fork_length, breaks = breaks, include.lowest = TRUE)) |>
     group_by(species, .draw, fork_length_bin, sarc_presence) |>
@@ -378,37 +367,55 @@ plot_sim_mat <- function(fit, ld, sex = c("female", "male"), prior_only = FALSE,
     mutate(.draw = as.character(.draw))
 
   # Combine and plot
-  plot_title <- glue::glue(
-    ifelse(prior_only, "Prior predictive check", "Posterior predictive check"),
-    " - {sex}"
-  )
+  # plot_title <- glue::glue(
+    # ifelse(prior_only, "Prior predictive check", "Posterior predictive check"),
+    # " - {sex}"
+  # )
+  plot_title <- str_to_title(sex)
 
   bind_rows(
     l_bins |> mutate(source = "observed", .draw = "observed"),
     pp_pred |> mutate(source = "predicted")
   ) |>
-    mutate(.draw = factor(.draw, levels = c("observed", as.character(1:n_draws)))) |>
+    mutate(.draw = factor(.draw, levels = c(as.character(1:n_draws), "observed"))) |>
+    mutate(sarc_presence = factor(sarc_presence, levels = c(0, 1), labels = c("Not infected", "Infected"))) |>
     ggplot(aes(x = mean_fork_length, y = prop_mature, colour = species)) +
     geom_point(data = ~filter(.x, source == "observed")) +
     geom_point(data = ~filter(.x, source == "predicted"), aes(group = interaction(species, .draw)),
       alpha = 1) +
-    facet_grid(.draw ~ sarc_presence, scales = "free_x") +
+    facet_grid(.draw ~ sarc_presence) +
     scale_color_brewer(palette = "Paired") +
     guides(colour = "none") +
-    labs(y = "Proportion Mature", x = "Fork Length", title = plot_title)
+    labs(y = "Proportion Mature", x = "Fork Length", title = plot_title) +
+    theme(axis.text.y = element_text(size = 9)) +
+    scale_y_continuous(
+      breaks = c(0, 0.5, 1.0)
+    )
 }
 
 # Posterior
-plot_sim_mat(fit = fit_1f, sex = "female", ld = ld)
-plot_sim_mat(fit = fit_1m, sex = "male", ld = ld)
+(plot_sim_mat(fit = fit_1f, sex = "female", ld = ld) +
+  theme(strip.text.y = element_blank())) +
+(plot_sim_mat(fit = fit_1m, sex = "male", ld = ld) +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank()))
+ggsave(here::here("length-post-pred.pdf"), width = 6.5, height = 9)
+# ggsave(here::here("length-post-pred.png"), width = 6.5, height = 9)
 
 # Prior
 priors <- get_prior(fit_1f)
-fit_1f_p <- update(fit_1f, sample_prior = "only", prior = priors)
-fit_1m_p <- update(fit_1m, sample_prior = "only", prior = priors)
+fit_1f_p <- update(fit_1f, sample_prior = "only", prior = priors, seed = 42)
+fit_1m_p <- update(fit_1m, sample_prior = "only", prior = priors, seed = 42)
 
-plot_sim_mat(fit = fit_1f_p, sex = "female", ld = ld, prior_only = TRUE)
-plot_sim_mat(fit = fit_1m_p, sex = "male", ld = ld, prior_only = TRUE)
+(plot_sim_mat(fit = fit_1f_p, sex = "female", ld = ld, prior_only = TRUE) +
+  theme(strip.text.y = element_blank())) +
+(plot_sim_mat(fit = fit_1m_p, sex = "male", ld = ld, prior_only = TRUE) +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank()))
+ggsave(here::here("length-prior-pred.pdf"), width = 6.5, height = 9)
+# ggsave(here::here("length-prior-pred.png"), width = 6.5, height = 9)
 
 # Prior checking
 # ------------------------
