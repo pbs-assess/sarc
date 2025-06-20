@@ -70,11 +70,9 @@ fit1 <- brm(
             prior(normal(0, 10), class = b, coef = Intercept) +
             prior(lkj(1), class = cor)
     ),
+  seed = 762914,
   control = list(max_treedepth = 12, adapt_delta = 0.9)
 )
-saveRDS(fit1, file.path(fit_dir, "infection-by-maturity-bin-brms-by-species.rds"))
-beepr::beep()
-fit1 <- readRDS(file.path(fit_dir, "infection-by-maturity-bin-brms-by-species.rds"))
 # plot(fit1)
 
 # Q2: Do immature fish have a higher number of sarcs than mature fish (# sarcs ~ immature vs mature)
@@ -93,11 +91,9 @@ fit2 <- brm(
   prior = c(prior(normal(0, 2), class = b) +
             prior(student_t(3, 0, 2), class = sd) +
             prior(normal(0, 10), class = b, coef = Intercept)),
+  seed = 31997429,
   control = list(max_treedepth = 12, adapt_delta = 0.9)
 )
-beepr::beep()
-saveRDS(fit2, file.path(fit_dir, "sarc-count-by-immature-mature-brms.rds"))
-fit2 <- readRDS(file.path(fit_dir, "sarc-count-by-immature-mature-brms.rds"))
 # plot(fit2)
 
 # Q3: Does infection rate differ across maturity bins (1 through 7)
@@ -114,11 +110,9 @@ fit3 <- brm(
   prior = c(prior(normal(0, 2), class = b) +
             # prior(student_t(3, 0, 2), class = sd) +
             prior(normal(0, 10), class = b, coef = Intercept)),
+  seed = 1697017132,
   control = list(max_treedepth = 12, adapt_delta = 0.9)
 )
-beepr::beep()
-saveRDS(fit3, file.path(fit_dir, "infection-by-maturity-bin-brms.rds"))
-fit3 <- readRDS(file.path(fit_dir, "infection-by-maturity-bin-brms.rds"))
 # plot(fit3)
 
 # With combined bins 4 and 5 for both male and female (1, 2, 3, 4/5, 6, 7)
@@ -127,12 +121,12 @@ fit3b <- brm(
   sarc_presence ~ 0 + Intercept + maturity_bin2 * sex +
     (1 + maturity_bin2 * sex | species),
   family = bernoulli(),
-  data = main_spp_dat,
+  data = dat,
   iter = 2000L,
   warmup = 1000L,
   chains = 4L,
   cores = 4L,
-  file = "cache/maturity-bin-fit3b2",
+  file = "cache/maturity-bin-fit3b",
   backend = "cmdstanr",
   seed = 9382919,
   prior = c(prior(normal(0, 2), class = b) +
@@ -140,18 +134,9 @@ fit3b <- brm(
             prior(normal(0, 10), class = b, coef = Intercept)),
   control = list(max_treedepth = 12, adapt_delta = 0.99)
 )
-beepr::beep()
-saveRDS(fit3b, file.path(fit_dir, "infection-by-maturity-bin-collapsed4-5-brms.rds"))
-fit3b <- readRDS(file.path(fit_dir, "infection-by-maturity-bin-collapsed4-5-brms.rds"))
 # plot(fit3b)
 
-# Prior checks
-
-
-# Immature vs Mature
-# ------------------------
-#-- Q1 --#
-# In natural space calculate the ratio of sarc infection in immature to mature:
+# New data for predictions
 nd <- expand.grid(
   species = unique(dat$species),
   sex = unique(dat$sex),
@@ -159,514 +144,443 @@ nd <- expand.grid(
   maturity_bin = unique(dat$maturity_bin)
 )
 
-lpd1 <- fit1 |>
-  add_linpred_draws(newdata = nd |> distinct(sex, maturity_factor), re_formula = NA, transform = TRUE)
+# ------------------------
+# Maturity factor (immature vs mature) infection probability
+# ------------------------
+pop_level1 <- fit1 |>
+  add_epred_draws(newdata = nd |> distinct(sex, maturity_factor), re_formula = NA)
 
-lpd_wide1 <- lpd1 |>
-  ungroup() |>
-  select(-.row, -.chain, -.iteration) |>
-  arrange(.draw, sex, maturity_factor) |>
-  pivot_wider(names_from = c(sex, maturity_factor), values_from = .linpred, names_sep = "_")
+spp_level1 <- fit1 |>
+  add_epred_draws(newdata = nd |> distinct(species, sex, maturity_factor),
+    re_formula = NULL)
 
-p1 <- lpd_wide1 |>
-  mcmc_intervals(pars = c("female_immature", "female_mature", "male_immature", "male_mature")) +
-  scale_y_discrete(labels = c(
-    "female_immature" = "female immature",
-    "female_mature"   = "female mature",
-    "male_immature"   = "male immature",
-    "male_mature"     = "male mature"
-  ))
-imm_to_mat_ratio <- lpd_wide1 |>
-  mutate(f_imm_mat_ratio = female_immature / female_mature,
-         m_imm_mat_ratio = male_immature / male_mature)
-saveRDS(imm_to_mat_ratio, here::here("data-generated", "overall-immature-to-mature-ratio.rds"))
+p_inf_factor <- spp_level1 |>
+  bind_rows(pop_level1 |> mutate(species = "population"))
 
-# p2 <- imm_to_mat_ratio |>
-# mcmc_intervals(pars = c("f_imm_mat_ratio", "m_imm_mat_ratio"), prob = 0.50, point_est = "median") +
-#   geom_vline(xintercept = 1, linetype = "dashed") +
-#   scale_x_continuous(limits = c(0, 5), breaks = 0:5) +
-#   scale_y_discrete(labels = c(
-#     "f_imm_mat_ratio" = "Female",
-#     "m_imm_mat_ratio" = "Male"
-#   )) +
-#   xlab("Ratio of posterior infection probability: immature / mature")
-# p2
+p_inf_factor_summary <- p_inf_factor |>
+  group_by(species, sex, maturity_factor) |>
+  summarise(mid = median(.epred),
+            lwr = quantile(.epred, probs = 0.05),
+            upr = quantile(.epred, probs = 0.95))
 
-imm_to_mat_ratio |>
-  gather(-1, key = "par", value = "posterior") |>
-  filter(par %in% c("f_imm_mat_ratio", "m_imm_mat_ratio")) |>
-ggplot(aes(x = posterior, y = forcats::fct_rev(par))) +
-  ggdist::stat_halfeye(.width = c(.5, .95)) +
-  geom_vline(xintercept = 1, linetype = "dashed") +
-  scale_x_continuous(limits = c(0, 6)) +
-  scale_y_discrete(labels = c(
-    "f_imm_mat_ratio" = "Female",
-    "m_imm_mat_ratio" = "Male"
-  )) +
-  xlab("Ratio of infection probability\n(immature / mature)") +
-  theme(axis.title.y = element_blank())
-ggsave(here::here("figures","maturity-factor-male-female-ratio.pdf"), width = 4.2, height = 3)
-ggsave(here::here("figures","maturity-factor-male-female-ratio.png"), width = 4.2, height = 3)
+p_inf_spp_levels <- p_inf_factor_summary |>
+  filter(sex == "female", maturity_factor == "immature") |>
+  filter(species != "population") |>
+  arrange(-mid) |>
+  pull("species") %>%
+  c("population", .)
 
-# 35% probability that immature females have 2x higher infection rates than mature females
-mean(imm_to_mat_ratio$f_imm_mat_ratio > 2)
-mean(imm_to_mat_ratio$f_imm_mat_ratio > 1) # 92% probability of having more infections in immature
-# 73% probability that immature males have 2x higher infection rates than mature males
-mean(imm_to_mat_ratio$m_imm_mat_ratio > 2)
 
-# Quantile summaries for immature:mature ratios
-quantiles1 <- imm_to_mat_ratio |>
-  summarise(across(
-    # c(female_immature, female_mature, male_immature, male_mature),
-    -.draw,
-    list(
-      median = ~ median(.),
-      # q25 = ~ quantile(., 0.25),
-      # q75 = ~ quantile(., 0.75),
-      q2.5 = ~ quantile(., 0.025),
-      q97.5 = ~ quantile(., 0.975)
-    ),
-    .names = "{.col}_{.fn}"
-  )) |>
-  pivot_longer(
-    everything(),
-    names_to = c("Group", "Quantile"),
-    names_pattern = "^(.*)_(median|q25|q75|q2\\.5|q97\\.5)$"
-  ) |>
-  pivot_wider(names_from = Quantile, values_from = value) |>
-  rename_with(~ gsub("_", " ", .x)) |>
-  relocate(Group)
+prep_plot_data <- function(data, spp_levels, main_spp_only = TRUE) {
+  dat <- data
+  if (main_spp_only) {
+    dat <- dat |>
+      filter(tolower(species) %in% c(tolower(main_spp$species), "population"))
+  }
+  dat <- dat |>
+    mutate(species = factor(species, levels = rev(spp_levels)),
+           species = forcats::fct_relabel(species, str_to_title),
+           sex = forcats::fct_relabel(sex, str_to_title))
+}
 
-# ----------
-# By species - comparing immature to mature
-# ----------
-lpd1 <- fit1 |>
-  add_linpred_draws(newdata = nd |> distinct(species, sex, maturity_factor),
-    re_formula = NULL, transform = TRUE)
-
-lpd1 |>
-  filter(species %in% main_spp$species) |>
-  mutate(maturity_factor = forcats::fct_relevel(maturity_factor, "mature", "immature"),
-    species = str_to_title(species)) |>
-  ggplot(aes(x = .linpred, y = maturity_factor)) +
-  stat_halfeye(.width = c(0.025, 0.975)) +
-  labs(x = "Predicted probability", y = NULL) +
-  # facet_grid(rows = vars(species), col = vars(sex), switch = "y", scales = "free_y") +
-  ggh4x::facet_nested_wrap(. ~ species + sex, ncol = 2,
-    labeller = labeller(.default = function(x) str_to_title(x))) +
-  ggsidekick::theme_sleek(base_size = 10) +
+p1 <- p_inf_factor |>
+  prep_plot_data(spp_levels = p_inf_spp_levels, main_spp_only = TRUE) |>
+  ggplot() +
+  aes(x = .epred, y = fct_rev(maturity_factor), colour = sex) +
+  geom_rect(data = tibble(species = factor("Population", levels = str_to_title(p_inf_spp_levels)), ymin = -Inf, ymax = Inf, xmin = -Inf, xmax = Inf),
+            aes(ymin = ymin, ymax = ymax, xmin = xmin, xmax = xmax),
+            fill = "grey92", colour = NA, inherit.aes = FALSE) +
+  ggdist::stat_pointinterval(
+      .width = c(0.5, 0.95),
+      point_size = 2,
+      position = position_dodge(width = -0.5)
+  ) +
+  ggh4x::facet_nested(species ~ ., nest_line = TRUE, switch = "y") +
+  labs(colour = "Sex", y = "Species", x = "Probability of infection") +
+  scale_colour_manual(values = c("Female" = "black", "Male" = "grey60")) +
   theme(
-    panel.spacing.y = unit(0.1, "lines"),
+    legend.position = "top",
     strip.placement = "outside",
-    # strip.text.y.left = element_text(angle = 0, hjust = 0),
-    strip.background = element_blank()
-  ) +
-  xlim(c(0, 0.21))
-ggsave(here::here("figures", "maturity-factor-by-species.png"), width = 5.5, height = 5.4)
-ggsave(here::here("figures", "maturity-factor-by-species.pdf"), width = 5.5, height = 5.4)
+    strip.text.y.left = element_text(angle = 0),
+    panel.spacing = unit(-1, "mm"),
+  )
+p1
 
-lpd_wide1 <- lpd1 |>
+p1
+ggsave(here::here("figures", "maturity-factor-P(infected)-main-spp.pdf"), width = 4.5, height = 5.3)
+# ggsave(here::here("figures", "maturity-factor-P(infected)-main-spp.png"), width = 4.5, height = 5.3)
+# this crazy function to update data :o
+p1 %+% prep_plot_data(p_inf_factor, spp_levels = p_inf_spp_levels, main_spp_only = FALSE)
+ggsave(here::here("figures", "maturity-factor-P(infected)-all-spp.pdf"), width = 4.5, height = 7.8)
+# ggsave(here::here("figures", "maturity-factor-P(infected)-all-spp.png"), width = 4.5, height = 5.4)
+
+
+# Immature vs Mature ratios
+# ------------------------
+pop_ratios <- pop_level1 |>
   ungroup() |>
-  select(-.row, -.chain, -.iteration) |>
-  # arrange(.draw, sex, maturity_factor) |>
-  pivot_wider(names_from = c(sex, maturity_factor), values_from = .linpred, names_sep = "_")  |>
-  mutate(f_imm_mat_ratio = female_immature / female_mature,
-         m_imm_mat_ratio = male_immature / male_mature)
+  select(.draw, sex, maturity_factor, .epred) |>
+  pivot_wider(names_from = maturity_factor, values_from = .epred) |>
+  mutate(imm_mat_ratio = immature / (mature)) |>
+  select(.draw, sex, imm_mat_ratio) |>
+  mutate(species = "population")
 
-lpd_ratio_long1 <- lpd_wide1 |>
-    pivot_longer(cols = -c(species, .draw),names_to = "group", values_to = "value")
+spp_ratios <- spp_level1 |>
+  ungroup() |>
+  select(species, .draw, sex, maturity_factor, .epred) |>
+  pivot_wider(names_from = maturity_factor, values_from = .epred) |>
+  mutate(imm_mat_ratio = immature / (mature)) |>
+  select(species, .draw, sex, imm_mat_ratio)
 
-ratio_order <- lpd_ratio_long1 |>
-  filter(group == "f_imm_mat_ratio") |>
-  group_by(species, group) |>
-  reframe(mean_ratio = mean(value)) |>
-  arrange(-mean_ratio) |>
-  pull(species) |>
-  as.character()
+imm_mat_ratio_df <- bind_rows(spp_ratios, pop_ratios)
 
-
-lpd_ratio_long1 |>
-  filter(species %in% main_spp$species) |>
-  filter(group %in% c("f_imm_mat_ratio", "m_imm_mat_ratio")) |>
-  mutate(species = forcats::fct_relevel(species, ratio_order)) |>
-  ggplot(aes(x = value, y = forcats::fct_rev(group))) +
-    geom_vline(xintercept = 1, linetype = "dashed") +
-    # ggdist::stat_halfeye(.width = c(.5, .95)) +
-    stat_pointinterval(.width = c(0.025, 0.5, 0.975), aes(colour = group)) +
-  theme(panel.spacing.y = unit(0.1, "lines"),
-    strip.placement = "outside",
-    strip.text.y = element_text(angle = 0, hjust = 0),
-    strip.text.y.left = element_text(angle = 0, hjust = 0),
-    strip.background = element_blank()
-  ) +
-  labs(x = "Ratio", y = NULL) +
-  scale_colour_manual(values = c("f_imm_mat_ratio" = "black", "m_imm_mat_ratio" = "grey"),
-    labels = c("f_imm_mat_ratio" = "Female", "m_imm_mat_ratio" = "Male")) +
-  guides() +
-  scale_y_discrete(labels = c(
-    "f_imm_mat_ratio" = "Female",
-    "m_imm_mat_ratio" = "Male"
-  )) +
-  facet_grid(row = vars(species), switch = "y",
-    labeller = labeller(.default = function(x) str_to_title(x))) +
-  xlab("Ratio of infection probability\n(immature / mature)") +
-  theme(axis.title.y = element_blank(),
-        axis.text.y = element_blank(),
-        legend.title = element_blank(),
-        legend.position = "top")#
-
-ggsave(here::here("figures", "species-immature-to-mature-ratio.pdf"), width = 4, height = 5)
-ggsave(here::here("figures", "species-immature-to-mature-ratio.png"), width = 4, height = 5)
-
-# Quantile summaries for immature:mature ratios
-quantiles1 <- lpd_wide1 |>
+ratio_spp_levels <- imm_mat_ratio_df |>
+  filter(sex == "female", species != "population") |>
   group_by(species) |>
-  summarise(across(
-    c(f_imm_mat_ratio, m_imm_mat_ratio),
-    list(
-      median = ~ median(.),
-      q2.5 = ~ quantile(., 0.025),
-      q97.5 = ~ quantile(., 0.975)
-    ),
-    .names = "{.col}_{.fn}"
-  )) |>
-  pivot_longer(
-    -species,
-    names_to = c("Group", "Quantile"),
-    names_pattern = "^(.*)_(median|q25|q75|q2\\.5|q97\\.5)$"
-  ) |>
-  pivot_wider(names_from = Quantile, values_from = value) |>
-  rename_with(~ gsub("_", " ", .x)) |>
-  relocate(Group)
-quantiles1
+  summarise(median_ratio = median(imm_mat_ratio)) |>
+  arrange(-median_ratio) |>
+  pull(species) %>%
+  c("population", .)
 
-# @Question: Similar text values like for the overall, but for each species? certain species?
-# # 96% probability that immature females have 1.75x higher infection rates than mature females
-# mean(imm_to_mat_ratio$f_imm_mat_ratio > 1.75)
-# # 98% probability that immature males have 3x higher infection rates than mature males
-# mean(imm_to_mat_ratio$m_imm_mat_ratio > 3)
+p2 <- imm_mat_ratio_df |>
+  prep_plot_data(spp_levels = ratio_spp_levels, main_spp_only = TRUE) |>
+  ggplot() +
+  aes(x = imm_mat_ratio, y = fct_rev(species), colour = sex) +
+  geom_rect(data = tibble(species = factor("Population", levels = str_to_title(ratio_spp_levels)),
+    ymin = -Inf, ymax = 1.5, xmin = -Inf, xmax = Inf),
+            aes(ymin = ymin, ymax = ymax, xmin = xmin, xmax = xmax),
+            fill = "grey92", colour = NA, inherit.aes = FALSE) +
+  geom_vline(xintercept = 1, linetype = "dotted", colour = "grey50") +
+  ggdist::stat_pointinterval(
+      .width = c(0.5, 0.95),
+      point_size = 2,
+      position = position_dodge(width = -0.5)
+  ) +
+  labs(colour = "Sex", y = "Species", x = "Ratio (immature / mature)") +
+  scale_colour_manual(values = c("Female" = "black", "Male" = "grey60")) +
+  theme(
+    legend.position = "top",
+    strip.placement = "outside",
+    strip.text.y.left = element_text(angle = 0)
+  )
 
+p2
+ggsave(here::here("figures", "maturity-ratio-main-spp.pdf"), width = 4.5, height = 5.3)
+# ggsave(here::here("figures", "maturity-ratio-main-spp.png"), width = 4.5, height = 5.3)
+p2 %+% prep_plot_data(imm_mat_ratio_df, spp_levels = ratio_spp_levels, main_spp_only = FALSE)
+ggsave(here::here("figures", "maturity-ratio-all-spp.pdf"), width = 4.5, height = 7.8)
+# ggsave(here::here("figures", "maturity-ratio-all-spp.png"), width = 4.5, height = 5.3)
+
+# Values for text
+# 35% probability that immature females have 2x higher infection rates than mature females
+mean(filter(imm_mat_ratio_df, sex == "female" & species == "population")$imm_mat_ratio > 1) # 92% probability of having more infections in immature
+mean(filter(imm_mat_ratio_df, sex == "female" & species == "population")$imm_mat_ratio > 2)
+
+# 73% probability that immature males have 2x higher infection rates than mature males
+mean(filter(imm_mat_ratio_df, sex == "male" & species == "population")$imm_mat_ratio > 1)
+mean(filter(imm_mat_ratio_df, sex == "male" & species == "population")$imm_mat_ratio > 2)
 
 # ----
 # Q3: Does infection rate differ across maturity bins (collapsed 4 and 5)
 # In natural space calculate the ratio of sarc infection in immature to mature:
 nd <- expand.grid(
-  species = unique(dat$species),
+  # species = unique(dat$species),
+  species = main_spp$species,
   sex = unique(dat$sex),
   maturity_factor = unique(dat$maturity_factor),
   maturity_bin2 = unique(dat$maturity_bin2)
-)
+) |>
+droplevels()
 
-lpd3 <- fit3b |>
-  add_linpred_draws(newdata = nd |> distinct(sex, maturity_bin2), re_formula = NA, transform = TRUE)
+# Start with getting infection probability for each maturity bin
+pop_level3 <- fit3b |>
+  add_epred_draws(newdata = nd |> distinct(sex, maturity_bin2), re_formula = NA)
 
-lpd3 |>
-  mutate(sex = as.character(sex), maturity_code = as.numeric(as.character(maturity_bin2))) |>
-  left_join(mat_lu) |>
-  mutate(maturity_desc = factor(maturity_desc))
+spp_level3 <- fit3b |>
+  add_epred_draws(newdata = nd |> distinct(species, sex, maturity_bin2), re_formula = NULL)
 
-lpd_wide3 <- lpd3 |>
+p_inf_bins <- spp_level3 |>
   ungroup() |>
-  select(-.row, -.chain, -.iteration) |>
-  arrange(.draw, sex, maturity_bin2) |>
-  pivot_wider(names_from = c(sex, maturity_bin2), values_from = .linpred, names_sep = "_")
+  bind_rows(pop_level3 |> mutate(species = "population"))
 
-# This gets at Table 3:
-f_ratios <- lpd_wide3 |>
-  select(starts_with("female")) |>
-  mutate(`1-2` = female_1 / female_2,
-         `1-3` = female_1 / female_3,
-         `1-4.5` = female_1 / female_4.5,
-         `1-6` = female_1 / female_6,
-         `1-7` = female_1 / female_7) |>
-  mutate(`2-3` = female_2 / female_3,
-         `2-4.5` = female_2 / female_4.5,
-         `2-6` = female_2 / female_6,
-         `2-7` = female_2 / female_7) |>
-  select(!starts_with("female")) |>
-  mutate(sex = "female")
+p_inf_bins_summary <- p_inf_bins |>
+  group_by(species, sex, maturity_bin2) |>
+  summarise(mid = median(.epred),
+            lwr = quantile(.epred, probs = 0.05),
+            upr = quantile(.epred, probs = 0.95))
 
-m_ratios <- lpd_wide3 |>
-  select(starts_with("male")) |>
-  mutate(`1-2` = male_1 / male_2,
-         `1-3` = male_1 / male_3,
-         `1-4.5` = male_1 / male_4.5,
-         `1-6` = male_1 / male_6,
-         `1-7` = male_1 / male_7) |>
-  mutate(`2-3` = male_2 / male_3,
-         `2-4.5` = male_2 / male_4.5,
-        #  `2-5` = male_2 / male_5,
-         `2-6` = male_2 / male_6,
-         `2-7` = male_2 / male_7) |>
-  select(!starts_with("male")) |>
-  mutate(sex = "male")
+p_inf_bins_spp_levels <- p_inf_bins_summary |>
+  filter(sex == "female", maturity_bin2 == "1") |>
+  filter(species != "population") |>
+  arrange(-mid) |>
+  pull("species") %>%
+  c("population", .)
 
-bin_ratios <- bind_rows(f_ratios, m_ratios) |>
-  pivot_longer(cols = -sex, names_to = "bins", values_to = "ratio") |>
-  separate(bins, into = c("group1", "group2"), sep = "-") |>
-  mutate(group1 = as.numeric(group1), group2 = as.numeric(group2)) |>
-  left_join(mat_lu |> distinct(sex, maturity_code2, maturity_desc2), by = c("sex", "group2" = "maturity_code2")) |>
-  mutate(maturity_desc = forcats::fct_inorder(maturity_desc2))
+# option 1 with male and female on same plot
+p_inf_bins |>
+  mutate(species = factor(species, levels = p_inf_bins_spp_levels),
+         sex = forcats::fct_relabel(sex, str_to_title)) |>
+ggplot() +
+  aes(x = maturity_bin2, y = .epred, colour = sex) +
+  ggdist::stat_pointinterval(
+      .width = c(0.5, 0.95),
+      point_size = 2,
+      position = position_dodge(width = 0.5)) +
+  facet_wrap(. ~ species, ncol = 3, labeller = labeller(.default = str_to_title)) +
+  # facet_grid(~ species) +
+  scale_colour_manual(values = c("Female" = "black", "Male" = "grey60")) +
+  scale_y_continuous(limits = c(0, 0.3), oob = scales::oob_keep) +
+  labs(colour = "Sex", y = "Probability of infection", x = "Maturity status") +
+  theme(legend.position = "top")
+ggsave(here::here("figures", "maturity-bin-P(infected)-main-spp-FM-same-plot.pdf"), width = 7.1, height = 4.4)
+# ggsave(here::here("figures", "maturity-bin-P(infected)-main-spp-FM-same-plot.png"), width = 7.1, height = 4.4)
 
-bin_ratios |>
-  group_by(sex, group1, maturity_desc) |>
-  summarise(`q2.5`  = quantile(ratio, 0.025),
-            `q50`   = quantile(ratio, 0.50),
-            `q97.5` = quantile(ratio, 0.975)
-  ) |>
-  mutate(
-    Sex = str_to_title(sex),
-    `Group 1` = ifelse(group1 == 1, "Immature", "Maturing"),
-    `Group 2` = forcats::fct_relabel(maturity_desc, stringr::str_to_title),
-    `Median ratio (95% CI)` = paste0(
-      round(q50, 2), " (", round(q2.5, 2), " to ", round(q97.5, 2), ")"
-  )) |>
-  ungroup() |>
-  select(Sex, `Group 1`, `Group 2`, `Median ratio (95% CI)`) |>
-  group_by(Sex) |>
-  mutate(
-    Sex = if_else(duplicated(Sex), "", Sex),
-    `Group 1` = if_else(duplicated(`Group 1`), "", `Group 1`)
-  ) |>
-  flextable() |>
-  theme_booktabs() |>
-  autofit()
-
-
-table(dat$maturity_code2, dat$sarc_presence, dat$sex)
-
-# Maybe not the most intuitive way of showing this, but it is consistent with the other ways
-p1 <- bin_ratios |>
+# option 2 with male and female different plots
+p1 <-
+p_inf_bins |>
   filter(sex == "female") |>
-  ggplot(aes(x = ratio, y = forcats::fct_rev(maturity_desc2))) +
-  stat_pointinterval() +
-  geom_vline(xintercept = 1, linetype = "dashed") +
-  facet_grid(row = vars(group1), col = vars(sex)) +
-  scale_x_continuous(breaks = scales::pretty_breaks(n = 5), limits = c(0, 6), oob = scales::oob_keep) +
-  labs(y = "Maturity status") +
-  theme(strip.text.y = element_text(angle = 0))
+  prep_plot_data(spp_levels = p_inf_bins_spp_levels, main_spp_only = TRUE) |>
+ggplot() +
+  aes(x = maturity_bin2, y = .epred, colour = sex) +
+  ggdist::stat_pointinterval(
+      .width = c(0.5, 0.95),
+      point_size = 2,
+      position = position_dodge(width = 0.5)) +
+  # facet_wrap(. ~ species, ncol = 3) +
+  facet_grid(species ~ ., scales = "free_y", labeller = labeller(.default = str_to_title)) +
+  scale_colour_manual(values = c("Female" = "black", "Male" = "grey60")) +
+  # scale_y_continuous(limits = c(0, 0.3), oob = scales::oob_keep) +
+  labs(y = "Probability of infection", x = "Maturity status") +
+  theme(legend.position = "top",
+        legend.title = element_blank(),
+        strip.text.y = element_blank())
 p1
-p2 <- bin_ratios |>
-  filter(sex == "male") |>
-  ggplot(aes(x = ratio, y = forcats::fct_rev(maturity_desc2))) +
-  stat_pointinterval() +
-  geom_vline(xintercept = 1, linetype = "dashed") +
-  facet_grid(row = vars(group1), col = vars(sex)) +
-  scale_x_continuous(breaks = scales::pretty_breaks(n = 5), limits = c(0, 15), oob = scales::oob_keep) +
-  theme(axis.title.y = element_blank(),
-        strip.text.y = element_text(angle = 0))
-  # labs(y = "Maturity status")
-p1 + p2
+
+p2 <- p1 %+%
+  prep_plot_data(p_inf_bins |> filter(sex == "male"),
+    spp_levels = p_inf_bins_spp_levels,
+    main_spp_only = TRUE) +
+    theme(axis.title.y = element_blank(),
+          strip.text.y = element_text(size = 10),
+          strip.clip = "off")
+((p1 + ggtitle("Female")) + (p2 + ggtitle("Male"))) +
+  plot_layout(guides = "collect") & theme(legend.position = "none")
+ggsave(here::here("figures", "maturity-bin-P(infected)-main-spp.pdf"), width = 7.1, height = 9.6)
+# ggsave(here::here("figures", "maturity-bin-P(infected)-main-spp.png"), width = 7.1, height = 9.6)
+
+# p1 <- p1 %+%
+#   prep_plot_data(p_inf_bins |> filter(sex == "male"),
+#     spp_levels = p_inf_bins_spp_levels,
+#     main_spp_only = FALSE)
+# p2 <- p1 %+%
+#   prep_plot_data(p_inf_bins |> filter(sex == "male"),
+#     spp_levels = p_inf_bins_spp_levels,
+#     main_spp_only = FALSE)
+# ((p1 + ggtitle("Female")) / (p2 + ggtitle("Male"))) +
+#   plot_layout(guides = "collect")
+# ggsave(here::here("figures", "maturity-bin-P(infected)-main-spp.pdf"), width = 6.7, height = 7.2)
+# ggsave(here::here("figures", "maturity-bin-P(infected)-main-spp.png"), width = 6.7, height = 7.2)
+
+
+# TODO: add all spp plot
+# plot_posteriors(p_inf_bins, main_spp_only = FALSE, xtitle = "Probability of infection")
+# ggsave(here::here("figures", "maturity-bin-P(infected)-all-spp.pdf"), width = 4.1, height = 5.4)
+# ggsave(here::here("figures", "maturity-bin-P(infected)-all-spp.png"), width = 4.1, height = 5.4)
+
+
+# Bin ratios
+# ------------------------
+pop_ratios3 <- pop_level3 |>
+  ungroup() |>
+  select(.draw, sex, maturity_bin2, .epred) |>
+  pivot_wider(names_from = maturity_bin2, values_from = .epred) |>
+  mutate(`1/2` = `1` / `2`,
+         `1/3` = `1`/ `3`,
+         `1/4.5` = `1` / `4.5`,
+         `1/6` = `1` / `6`,
+         `1/7` = `1` / `7`) |>
+  mutate(`2/3` = `2` / `3`,
+         `2/4.5` = `2` / `4.5`,
+         `2/6` = `2` / `6`,
+         `2/7` = `2` / `7`) |>
+  mutate(species = "population") |>
+  select(species, sex, starts_with("1"), starts_with("2"))
+
+spp_ratios3 <- spp_level3 |>
+  ungroup() |>
+  select(species, .draw, sex, maturity_bin2, .epred) |>
+  pivot_wider(names_from = maturity_bin2, values_from = .epred) |>
+  mutate(`1/2` = `1` / `2`,
+         `1/3` = `1` / `3`,
+         `1/4.5` = `1` / `4.5`,
+         `1/6` = `1` / `6`,
+         `1/7` = `1` / `7`) |>
+  mutate(`2/3` = `2` / `3`,
+         `2/4.5` = `2` / `4.5`,
+         `2/6` = `2` / `6`,
+         `2/7` = `2` / `7`) |>
+  select(species, .draw, sex, starts_with("1"), starts_with("2"))
+
+bin_ratios <- bind_rows(spp_ratios3, pop_ratios3) |>
+  select(-`1`, -`2`) |>
+  pivot_longer(cols = c(starts_with("1"), starts_with("2")), names_to = "bins", values_to = "ratio")
+
+bin_ratio_spp_levels <- p_inf_bins_spp_levels
+
+# option 1 with male and female on same plot - cluttered
+p_fm <- bin_ratios |>
+  prep_plot_data(spp_levels = bin_ratio_spp_levels, main_spp_only = TRUE) |>
+  filter(str_detect(bins, "^1")) |>
+ggplot() +
+  aes(x = bins, y = ratio, colour = sex) +
+  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey50") +
+  ggdist::stat_pointinterval(
+      .width = c(0.5, 0.95),
+      point_size = 2,
+      position = position_dodge(width = 0.5)) +
+  scale_colour_manual(values = c("Female" = "black", "Male" = "grey60")) +
+  facet_grid(species ~ ., scales = "free_y", labeller = labeller(.default = str_to_title)) +
+  # facet_wrap(. ~ species, ncol = 3, labeller = labeller(.default = str_to_title)) +
+  # scale_y_continuous(limits = c(0, 15), oob = scales::oob_keep) +
+  labs(colour = "Sex", y = "Ratio", x = "Maturity status comparison") +
+  theme(legend.position = "top")
+
+# option 2 with male and female on different plots
+pf <- p_fm %+%
+  prep_plot_data(bin_ratios |> filter(str_detect(bins, "1/"), sex == "female"),
+    spp_levels = bin_ratio_spp_levels,
+    main_spp_only = TRUE) +
+    scale_y_continuous(limits = c(0, 10), oob = scales::oob_keep) +
+    theme(strip.text.y = element_blank())
+pm <- p_fm %+%
+  prep_plot_data(bin_ratios |> filter(str_detect(bins, "1/"), sex == "male"),
+    spp_levels = bin_ratio_spp_levels, main_spp_only = TRUE) +
+    scale_y_continuous(limits = c(0, 30), oob = scales::oob_keep) +
+    theme(axis.title.y = element_blank(),
+          strip.text.y = element_text(size = 10),
+          strip.clip = "off")
+
+(pf + ggtitle("Female")) + (pm + ggtitle("Male")) + plot_layout(guides = "collect") & theme(legend.position = "none")
+ggsave(here::here("figures", "maturity-bin-ratio-main-spp-immature.pdf"), width = 7.1, height = 9.6)
+# ggsave(here::here("figures", "maturity-bin-ratio-main-spp-immature.png"), width = 7.1, height = 9.6)
+
+# Maturity status 2 comparsion
+# ------------------------
+# p_fm2 <- p_fm %+% # very cluttered visually
+#   prep_plot_data(bin_ratios |> filter(str_detect(bins, "^2")),
+#     spp_levels = bin_ratio_spp_levels, main_spp_only = TRUE)
+
+p_f2 <- p_fm %+%
+  prep_plot_data(bin_ratios |> filter(str_detect(bins, "^2"), sex == "female"),
+    spp_levels = bin_ratio_spp_levels, main_spp_only = TRUE) +
+    scale_y_continuous(limits = c(0, 10), oob = scales::oob_keep) +
+    theme(strip.text.y = element_blank())
+p_m2 <- p_fm2 %+%
+  prep_plot_data(bin_ratios |> filter(str_detect(bins, "^2"), sex == "male"),
+    spp_levels = bin_ratio_spp_levels, main_spp_only = TRUE) +
+    scale_y_continuous(limits = c(0, 30), oob = scales::oob_keep) +
+    theme(axis.title.y = element_blank(),
+          strip.text.y = element_text(size = 10),
+          strip.clip = "off")
+
+(p_f2 + ggtitle("Female")) + (p_m2 + ggtitle("Male")) +
+  plot_layout(guides = "collect") & theme(legend.position = "none")
+ggsave(here::here("figures", "maturity-bin-ratio-main-spp-maturing.pdf"), width = 7.1, height = 9.6)
+# ggsave(here::here("figures", "maturity-bin-ratio-main-spp-maturing.png"), width = 7.1, height = 9.6)
 
 # ------------------------------------------------------------------------------
 # Q2: Do immature fish have a higher number of sarcs than mature fish (original Figure 6?)
-# - yes but since this isn't splitting probability of encounter from count, it's just saying the same as the presence model
 nd <- expand.grid(
   species = unique(dat$species),
   sex = unique(dat$sex),
   maturity_factor = unique(dat$maturity_factor)
-)
+) |>
+  droplevels()
 
-lpd2 <- fit2 |>
-  add_linpred_draws(newdata = nd |> distinct(sex, maturity_factor), re_formula = NA, transform = TRUE)
+pop_level2 <- fit2 |>
+  add_epred_draws(newdata = nd |> distinct(sex, maturity_factor), re_formula = NA)
 
-ggplot(lpd2, aes(x = .linpred, y = forcats::fct_rev(maturity_factor))) +
-  stat_halfeye(.width = c(0.5, 0.8, 0.95)) +
-  labs(x = "Expected number of cysts", y = "Maturity") +
-  facet_wrap(~ sex)
+spp_level2 <- fit2 |>
+  add_epred_draws(newdata = nd |> distinct(species, sex, maturity_factor),
+    re_formula = NULL)
 
-lpd_wide2 <- lpd2 |>
-  ungroup() |>
-  select(-.row, -.chain, -.iteration) |>
-  arrange(.draw, sex, maturity_factor) |>
-  pivot_wider(names_from = c(sex, maturity_factor), values_from = .linpred, names_sep = "_")
+p_count_factor <- spp_level2 |>
+  bind_rows(pop_level2 |> mutate(species = "population")) |>
+  ungroup()
 
-count_ratio <- lpd_wide2 |>
-  mutate(female = female_immature / female_mature,
-         male = male_immature / male_mature)
+p_count_factor_summary <- p_count_factor |>
+  group_by(species, sex, maturity_factor) |>
+  summarise(mid = median(.epred),
+            lwr = quantile(.epred, probs = 0.05),
+            upr = quantile(.epred, probs = 0.95))
 
-# Ratio of expected NUMBER of sarc cysts
-count_q <- count_ratio |>
-  summarise(across(
-    c(female, male),
-    list(
-      median = ~ median(.),
-      q2.5 = ~ quantile(., 0.025),
-      q97.5 = ~ quantile(., 0.975)
-    ),
-    .names = "{.col}_{.fn}"
-  )) |>
-  pivot_longer(cols = everything(), names_to = c("Sex", "Stat"), names_pattern = "(female|male)_(.*)") |>
-  pivot_wider( names_from = Stat, values_from = value) |>
-  mutate(Sex = str_to_title(Sex))
-count_q
+p_count_spp_levels <- p_count_factor_summary |>
+  filter(sex == "female", maturity_factor == "immature") |>
+  filter(species != "population") |>
+  arrange(-mid) |>
+  pull("species") %>%
+  c("population", .)
 
-# -----
-# better understand prior predictive checking
-# -----
-fitf <- brm(
-  # sarc_count ~ 0 + Intercept + maturity_bin * sex +
-  #   (1 + maturity_bin * sex | species),
-  sarc_count ~ 0 + Intercept + maturity_bin +
-    (1 + maturity_bin | species),
-  family = zero_inflated_poisson(),
-  data = dat |> filter(sex == "female"),
-  iter = 2000L,
-  warmup = 500L,
-  chains = 4L,
-  cores = 4L,
-  backend = "cmdstanr",
-  prior = c(prior(normal(0, 2), class = b) +
-            prior(student_t(3, 0, 2), class = sd) +
-            prior(normal(0, 5), class = b, coef = Intercept) +
-            prior(beta(3, 1), class = zi)),  # the brms default is beta(1, 1)
-    # prior(normal(0, 5), class = b) +
-    # prior(student_t(3, 0, 2), class = sd) +
-    # prior(normal(0, 10), class = b, coef = Intercept),
-  control = list(max_treedepth = 12, adapt_delta = 0.95)
-)
-# beepr::beep()
-# saveRDS(fitf, file.path(fit_dir, "sarc-number-by-group-brms-zinp-female.rds"))
-# fitf <- readRDS(file.path(fit_dir, "sarc-number-by-group-brms-zinp-female.rds"))
+p1 <- p_count_factor |>
+  prep_plot_data(spp_levels = p_count_spp_levels, main_spp_only = TRUE) |>
+  ggplot() +
+  aes(x = .epred, y = fct_rev(maturity_factor), colour = sex) +
+  geom_rect(data = tibble(species = factor("Population", levels = str_to_title(p_inf_spp_levels)), ymin = -Inf, ymax = Inf, xmin = -Inf, xmax = Inf),
+            aes(ymin = ymin, ymax = ymax, xmin = xmin, xmax = xmax),
+            fill = "grey92", colour = NA, inherit.aes = FALSE) +
+  ggdist::stat_pointinterval(
+      .width = c(0.5, 0.95),
+      point_size = 2,
+      position = position_dodge(width = -0.5)
+  ) +
+  ggh4x::facet_nested(species ~ ., nest_line = TRUE, switch = "y") +
+  labs(colour = "Sex", y = "Species", x = "Expected number of cysts") +
+  scale_colour_manual(values = c("Female" = "black", "Male" = "grey60")) +
+  theme(
+    legend.position = "top",
+    strip.placement = "outside",
+    strip.text.y.left = element_text(angle = 0),
+    panel.spacing = unit(-1, "mm"),
+  )
+p1
+ggsave(here::here("figures", "maturity-factor-count-main-spp.pdf"), width = 4.8, height = 5.3)
+# ggsave(here::here("figures", "maturity-factor-count-main-spp.png"), width = 4.8, height = 5.3)
 
+p1 %+%
+  prep_plot_data(p_count_factor, spp_levels = p_count_spp_levels, main_spp_only = FALSE)
+ggsave(here::here("figures", "maturity-factor-count-all-spp.pdf"), width = 4.8, height = 7.8)
+# ggsave(here::here("figures", "maturity-factor-count-all-spp.png"), width = 4.8, height = 7.8)
 
-fitf_prior <- update(fitf, sample_prior = "only",
-  prior = c(prior(normal(0, 2), class = b) +
-            prior(student_t(3, 0, 1), class = sd) +
-            prior(normal(0, 2), class = b, coef = Intercept) +
-            prior(beta(5, 1), class = zi)) # zi ~ a / (a + b)
-)
-beepr::beep()
+# Summary tables for text
+# -----------------------
+# Estimates from model fit1 (sarc_presence ~ maturity_factor * sex).
+# quantiles for infection probabilities for immature and mature fish (by species and sex)
+# see line ~300 in this script.
+p_inf_factor_summary
+saveRDS(p_inf_factor_summary, here::here("data-generated", "maturity-factor-infection-probabilities.rds"))
 
-fitm <- update(fitf, newdata = dat |> filter(sex == "male"))
-saveRDS(fitm, file.path(fit_dir, "sarc-number-by-group-brms-zinp-male.rds"))
-beepr::beep()
+# Estimates from model fit3b (sarc_presence ~ maturity_bin2 * sex).
+# quantiles for infection probabilities for different maturity bins (1, 2, 3, 4.5, 6, 7) (by species and sex)
+# see line ~464 in this script.
+p_inf_bins_summary
+saveRDS(p_inf_bins_summary, here::here("data-generated", "maturity-bin-infection-probabilities.rds"))
 
+# Estimates from model fit2 (sarc_count ~ maturity_factor * sex).
+# quantiles for number of cysts for immature and mature fish (by species and sex)
+# see line ~400 in this script.
+p_count_factor_summary
+saveRDS(p_count_factor_summary, here::here("data-generated", "maturity-factor-cyst-counts.rds"))
 
-fit3 <- update(fit,
-  family = zero_inflated_negbinomial()
-)
-beepr::beep()
+# Ratio dataframes
+# ----------------
+# Posterior draws of the ratio of infection probability in immature to mature fish.
+# Used for reporting the probability that immature fish have higher infection rates than mature fish.
+# see line ~278 in this script.
+imm_mat_ratio_df
+saveRDS(imm_mat_ratio_df, here::here("data-generated", "immature-to-mature-infection-ratio.rds"))
 
-get_variables(fit)
-
-nd <- expand.grid(
-  species = unique(dat$species),
-  # sex = unique(dat$sex),
-  maturity_bin = unique(dat$maturity_bin)
-)
-
-# Compare the difference in sarc count between male and female maturity bins
-pp <- fitf |>
-  add_predicted_draws(newdata = nd) # raw count predictions
-  # add_epred_draws(newdata = nd)  # expected values
-
-# The maximum predicted values are crazy huge.
-test <- fitf_prior |>
-  add_predicted_draws(newdata = nd)
-hist(test$.prediction)
-max(test$.prediction)
-
-pp |> filter(.prediction > 0) |>
-  filter(.prediction < 30) |> # just to get rid of crazy values so I can see what is happening.
-ggplot(data = _, aes(x = .prediction)) +
-  geom_histogram(color = "black", fill = "blue", alpha = 0.7) +
-  facet_grid(maturity_bin ~ species, scales = "free")
-
-filter(pp, species == "rougheye/blackspotted") |> arrange(-.prediction)
-filter(pp, species == "rougheye/blackspotted", .prediction < 400) |> arrange(-.prediction)
-
-
-ep <- fit |> add_predicted_draws(newdata = nd)
-
-ppd <- posterior_predict(fit, draws=50)
-ppc_intervals_grouped(y = dat$sarc_count, yrep = ppd, x = as.numeric(dat$maturity_bin), group = dat$species, prob = 0.5)
-beepr::beep()
-
-pp |> filter(.prediction <= 10) |>
-ggplot(data = _, aes(x = .prediction)) +
-  facet_grid(sex ~ maturity_bin, scales = "free") +
-  geom_density()
-
-hist(pp$.prediction)
-filter(pp, .prediction < 10 & .prediction > 7)
-
-# -------------------------------------------------------------------------------
-# Drunk monk example - to play with prior predictive check
-library(ggthemes)
-# define parameters
-prob_drink <- 0.95  # 20% of days
-rate_work  <- 1    # average 1 manuscript per day
-
-# sample one year of production
-n <- 10000
-
-# simulate days monks drink
-set.seed(11)
-drink <- rbinom(n, 1, prob_drink)
-
-# simulate manuscripts completed
-y <- (1 - drink) * rpois(n, rate_work)
-
-d <-
-  tibble(Y = y) %>%
-  arrange(Y) %>%
-  mutate(zeros = c(rep("zeros_drink", times = sum(drink)),
-                   rep("zeros_work",  times = sum(y == 0 & drink == 0)),
-                   rep("nope",        times = n - sum(y == 0))
-                   ))
-
-  ggplot(data = d, aes(x = Y)) +
-  geom_histogram(aes(fill = zeros),
-                 binwidth = 1, size = 1/10, color = "grey92") +
-  scale_fill_manual(values = c(canva_pal("Green fields")(4)[1],
-                               canva_pal("Green fields")(4)[2],
-                               canva_pal("Green fields")(4)[1])) +
-  xlab("Manuscripts completed") +
-  theme_hc() +
-  theme(plot.background = element_rect(fill = "grey92"),
-        legend.position = "none")
-
-monk_fit1 <- brm(data = d, family = zero_inflated_poisson,
-      Y ~ 1,
-      prior = c(prior(normal(0, 10), class = Intercept),
-                prior(beta(2, 2), class = zi)),  # the brms default is beta(1, 1)
-      cores = 4,
-      seed = 11)
-
-monk_prior <- update(monk_fit1, sample_prior = "yes")
-test <- d |> add_predicted_draws(monk_prior)
-
-filter(test, .prediction > 0) |>
-  ggplot(aes(x = .prediction)) +
-  geom_histogram(binwidth = 1, size = 1/10, color = "grey92") +
-  scale_x_continuous(breaks = 1:10)
-filter(d, Y > 0) |>
-  ggplot(aes(x = Y)) +
-  geom_histogram(binwidth = 1, size = 1/10, color = "grey92") +
-  scale_x_continuous(breaks = 1:10, limits = c(0.5, 9.5))
-
-
-
-
-ppd <- d |> add_predicted_draws(monk_fit1)
-
-ggplot(data = ppd, aes(x = Y)) +
-  geom_histogram(aes(fill = zeros),
-                 binwidth = 1, size = 1/10, color = "grey92") +
-  scale_fill_manual(values = c(canva_pal("Green fields")(4)[1],
-                               canva_pal("Green fields")(4)[2],
-                               canva_pal("Green fields")(4)[1])) +
-  xlab("Manuscripts completed") +
-  theme_hc() +
-  theme(plot.background = element_rect(fill = "grey92"),
-        legend.position = "none")
-
-max(ppd$.prediction)
-max(y)
-
-# Understanding effect of beta prior on zi parameter
-# https://discourse.mc-stan.org/t/specifying-bernoulli-prior-for-zero-inflated-beta-response-variable-in-brm-hgam/30076
-a <- 3
-b <- 1
-a / (a + b)
+# Posterior draws of ratios of infection probabilities between different maturity bins (e.g., 1/2, 1/3, etc.), by species and sex.
+# Useful for reporting infection risk across all maturity bins.
+# see line ~464 in this script.
+bin_ratios
+saveRDS(bin_ratios, here::here("data-generated", "maturity-bin-infection-ratios.rds"))
