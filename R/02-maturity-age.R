@@ -1,9 +1,6 @@
 library(tidyverse)
 library(scales)
 
-library(glmmTMB)
-library(broom.mixed)
-
 library(brms)
 library(bayesplot)
 library(tidybayes)
@@ -53,33 +50,6 @@ a_bins <- ad |>
 #   facet_grid(species ~ sarc_presence) +
 #   geom_smooth(method = "glm", method.args = list(family = binomial()), se = FALSE) +
 #   theme(legend.position = "bottom")
-
-# Maturity: glmmTMB
-# -------------------
-# am1 <- glmmTMB(
-#   mature ~ age_std * sarc_presence + (1 + age_std | species), # more complex structures don't converge
-#   # mature ~ age_std * sarc_presence + (1 + age_std | species), # more complex structures don't converge
-#   family = binomial(),
-#   data = ad
-# )
-# summary(am1)
-
-# pred <- predict(am1, newdata = nd, se.fit = TRUE)
-
-# nd1 <- nd |>
-#   mutate(
-#     fit = plogis(pred$fit),
-#     lower = plogis(pred$fit - 1.96 * pred$se.fit),
-#     upper = plogis(pred$fit + 1.96 * pred$se.fit)
-#   )
-
-# ggplot(nd1, aes(x = specimen_age, y = fit)) +
-#   facet_wrap(~ species) +
-#   geom_line(aes(colour = factor(sarc_presence))) +
-#   geom_ribbon(aes(ymin = lower, ymax = upper, fill = factor(sarc_presence)), alpha = 0.3) +
-#   geom_hline(yintercept = 0.5) +
-#   geom_point(data = a_bins, aes(x = specimen_age, y = prop_mature))
-
 
 # Age at Maturity ~ presence brms
 # -------------------------------
@@ -131,13 +101,8 @@ fit_1f <- brm(
   control = list(max_treedepth = 12, adapt_delta = 0.97)
 )
 # beepr::beep()
-saveRDS(fit_1f, file.path(fit_dir, "maturity-age-stan-model-female.rds"))
-fit_1f <- readRDS(file.path(fit_dir, "maturity-age-stan-model-female.rds"))
 
-fit_1m <- update(fit_1f, newdata = ad |> filter(sex == "male"))
-saveRDS(fit_1m, file.path(fit_dir, "maturity-age-stan-model-male.rds"))
-# beepr::beep()
-fit_1m <- readRDS(file.path(fit_dir, "maturity-age-stan-model-male.rds"))
+fit_1m <- update(fit_1f, newdata = ad |> filter(sex == "male"), file = "cache/age-fit1m")
 
 # Including species level effects - doesn't converge anymore after cleaning up data
 # fit_2f <- brm(
@@ -302,6 +267,7 @@ nd_m_mean$lwr <- apply(p_m_mean, 2, quantile, probs = 0.05)
 nd_m_mean$est <- apply(p_m_mean, 2, median)
 nd_m_mean$upr <- apply(p_m_mean, 2, quantile, probs = 0.95)
 
+age_ogive <-
 bind_rows(nd_f_mean, nd_m_mean) |>
   mutate(sarc_pres_label = factor(sarc_presence, levels = c(0, 1), labels = c("No", "Yes"))) |>
 ggplot(aes(x = specimen_age, y = plogis(est),
@@ -309,7 +275,8 @@ ggplot(aes(x = specimen_age, y = plogis(est),
   facet_wrap(~ sex, labeller = labeller(sex = str_to_title)) +
   geom_ribbon(aes(ymin = plogis(lwr), ymax = plogis(upr)), colour = NA, alpha = 0.3) +
   geom_line() +
-  # coord_cartesian(expand = FALSE, xlim = c(50, 750), ylim = c(-0.08, 1.08)) +
+  coord_cartesian(expand = FALSE, xlim = c(0, 75), ylim = c(-0.08, 1.08)) +
+  scale_x_continuous(breaks = seq(0, 75, 10)) +
   geom_segment(data = ad |> filter(mature == 1),
     mapping = aes(x = specimen_age, y = 1.01 + 0.03 * sarc_presence, yend = 1.04 + 0.03 * sarc_presence),
     alpha = 0.6, position = position_dodge2(width = 0.5)) +
@@ -321,9 +288,31 @@ ggplot(aes(x = specimen_age, y = plogis(est),
   theme(legend.title = ggtext::element_markdown()) +
   scale_fill_manual(values = c("No" = "grey50", "Yes" = "red")) +
   scale_colour_manual(values = c("No" = "grey50", "Yes" = "red")) +
-  theme(legend.position = "top")
-ggsave(here::here("figures", "maturity-age-overall-ogive.png"), width = 8, height = 4)
-ggsave(here::here("figures", "maturity-age-overall-ogive.pdf"), width = 8, height = 4)
+  theme(legend.position = "top",
+        legend.margin = margin(t = 0, r = 0, b = -5, l = 0),
+        strip.text = element_text(size = 10))
+age_ogive
+ggsave(here::here("figures", "maturity-age-overall-ogive.pdf"), width = 7.1, height = 4.1)
+# ggsave(here::here("figures", "maturity-age-overall-ogive.png"), width = 7.1, height = 4.1)
+saveRDS(age_ogive, here::here("data-generated", "age-ogive-ggplot.rds"))
+
+length_ogive <- readRDS(here::here("data-generated", "length-ogive-ggplot.rds"))
+
+wrap_plots(list(length_ogive, age_ogive), ncol = 1,
+  # axis_titles = "collect_y",
+  guides = "collect") +
+  plot_layout(widths = c(1, 20), guides = "collect") +
+  plot_annotation(tag_levels = 'a', tag_suffix = ")") &
+  theme(
+    plot.tag.position = c(0.05, 0.96),
+    axis.title.y = element_text(vjust = 6),
+    plot.margin = margin(t = 2, r = 2, b = 2, l = 10),
+    legend.position = "top",
+    legend.margin = margin(t = 0, r = 0, b = -5, l = 0)
+  )
+
+ggsave(here::here("figures", "length-age-ogives.pdf"), width = 7.1, height = 6.1)
+# ggsave(here::here("figures", "length-age-ogives.png"), width = 7.1, height = 6.1)
 
 # --------
 # Species-level
