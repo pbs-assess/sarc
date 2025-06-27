@@ -164,6 +164,7 @@ ggplot(aes(x = fork_length, y = plogis(est),
   theme(legend.position = "top",
         legend.margin = margin(t = 0, r = 0, b = -5, l = 0),
         strip.text = element_text(size = 10))
+length_ogive
 ggsave(here::here("figures", "length-ogive.pdf"), width = 7.1, height = 4.1)
 # ggsave(here::here("figures", "length-ogive.png"), width = 7.1, height = 4.1)
 
@@ -214,7 +215,10 @@ ggsave(here::here("figures", "length-ogive-by-species.pdf"), width = 8.5, height
 # ------------------------------------------------------------
 # Compare expected length when probability of maturity > 0.5
 # ------------------------------------------------------------
-get_p50 <- function(.int, .slope, .sd = sd(ld$fork_length), .mean = mean(ld$fork_length), p = 0.5) {
+get_p50 <- function(dat, .int, .slope, .sex, p = 0.5) {
+  dat <- filter(dat, sex == .sex)
+  .sd <- sd(dat$fork_length)
+  .mean <- mean(dat$fork_length)
   xx <- -(log((1/p) - 1) + .int) / .slope
   (xx * .sd) + .mean
 }
@@ -229,8 +233,8 @@ p50df <- post_spp |>
     sarc_adj <- filter(x, term == "Infection") |> pull(combined)
     sarc_interaction <- filter(x, term == "Length:Infection") |> pull(combined)
     data.frame(
-      p50_sarc_0 = get_p50(intercept, length_slope),
-      p50_sarc_1 = get_p50(intercept + sarc_adj, length_slope + sarc_interaction),
+      p50_sarc_0 = get_p50(ld, intercept, length_slope, .sex = x$sex[1]),
+      p50_sarc_1 = get_p50(ld, intercept + sarc_adj, length_slope + sarc_interaction, .sex = x$sex[1]),
       species = x$species[1],
       sex = x$sex[1]
     )
