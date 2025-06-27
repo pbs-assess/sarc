@@ -40,6 +40,7 @@ dat <- readRDS(here::here("data-generated", "clean-data.rds")) |>
   drop_na(sarc_count, sex, species, year, maturity_bin) |>
   mutate(maturity_factor = factor(ifelse(mature == 1, "mature", "immature"), levels = c("immature", "mature")),
          maturity_bin2 = factor(maturity_code2))
+saveRDS(dat, here::here("data-generated", "clean-data-maturity-bins.rds"))
 
 main_spp <- dat |>
   count(species, maturity_factor, sarc_presence) |>
@@ -49,6 +50,7 @@ main_spp <- dat |>
   #  print(n = 24)
 
 main_spp_dat <- filter(dat, species %in% main_spp$species)
+
 # Immature vs mature
 # ------------------------------------------------------------------------------
 # Q1: Do immature fish have higher infection rates than mature fish (sarc presence) ~ immature vs mature)

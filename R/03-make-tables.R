@@ -182,3 +182,79 @@ latex_cyst_table_final <- paste(latex_lines, collapse = '\n')
 existing_content <- read_lines(here::here("tables", "tables.tex"))
 new_content <- c(existing_content, "", latex_cyst_table_final)
 write_lines(new_content, here::here("tables", "tables.tex"))
+
+
+# Table sample sizes by maturity status
+# ------------------------------------------
+dat <- readRDS(here::here("data-generated", "clean-data-maturity-bins.rds"))
+
+bin_table <- dat |>
+  group_by(sex, maturity_code, sarc_presence) |>
+  summarize(count = n(), .groups = "drop") |>
+  pivot_wider(names_from = sarc_presence, values_from = count, values_fill = 0) |>
+  rename(
+    Sex = sex,
+    "Maturity status" = maturity_code,
+    Uninfected = `0`,
+    Infected = `1`
+  ) |>
+  arrange(Sex, `Maturity status`)
+saveRDS(bin_table, here::here("data-generated", "bin-table.rds"))
+
+bin_table2 <- dat |>
+  mutate(sex = str_to_title(sex)) |>
+  mutate(sex = factor(sex, levels = c("Female", "Male"))) |>
+  group_by(sex, maturity_code, sarc_presence) |>
+  summarize(count = n(), .groups = "drop") |>
+  mutate(count = comma(count)) |>
+  pivot_wider(
+    names_from = c(sex, sarc_presence),
+    values_from = count,
+    values_fill = "0"
+  ) |>
+  rename("Maturity status" = maturity_code) |>
+  arrange(`Maturity status`)
+
+latex_table <- bin_table2 |>
+  kable(
+    format = "latex",
+    booktabs = TRUE,
+    longtable = FALSE,
+    escape = FALSE,
+    col.names = c("Maturity status", "Uninfected", "Infected", "Uninfected", "Infected"),
+    align = c("l", "r", "r", "r", "r")
+  ) %>%
+  add_header_above(c(" " = 1, "Female" = 2, "Male" = 2)) %>%
+  kable_styling(latex_options = c("hold_position"), position = "center")
+
+
+latex_lines <- strsplit(latex_table, '\n')[[1]]
+latex_lines[grepl('^\\\\begin\\{table\\}\\[!h\\]', latex_lines)] <- '\\begin{table}[h]'
+latex_lines <- latex_lines[!grepl('^\\\\addlinespace', latex_lines)]
+caption_line <- '\\caption{Sample sizes by maturity status, infection status, and sex. For the analysis, due to the low sample sizes of maturity statuses in 4 and 5 were combined.}'
+label_line <- '\\label{tab:maturity-status-sample-sizes}'
+table_start <- which(grepl('^\\\\begin\\{table\\}\\[h\\]', latex_lines))
+latex_lines <- append(latex_lines, values = c(caption_line, label_line), after = table_start)
+
+# Insert \begin{center} before \begin{tabular}
+tabular_start <- which(grepl('^\\\\begin\\{tabular\\}', latex_lines))
+latex_lines <- c(
+  latex_lines[1:(tabular_start - 1)],
+  '\\begin{center}',
+  latex_lines[tabular_start:length(latex_lines)]
+)
+
+# Insert \end{center} after \end{tabular}
+tabular_end <- which(grepl('^\\\\end\\{tabular\\}', latex_lines))
+latex_lines <- c(
+  latex_lines[1:tabular_end],
+  '\\end{center}',
+  latex_lines[(tabular_end + 1):length(latex_lines)]
+)
+
+latex_table_final <- paste(latex_lines, collapse = '\n')
+
+# Append to existing tables.tex
+existing_content <- read_lines(here::here("tables", "tables.tex"))
+new_content <- c(existing_content, "", latex_table_final)
+write_lines(new_content, here::here("tables", "tables.tex"))
