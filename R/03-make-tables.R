@@ -212,8 +212,18 @@ bin_table2 <- dat |>
     values_from = count,
     values_fill = "0"
   ) |>
+  mutate(`Maturity` = case_when(
+    maturity_code %in% 1:2 ~ "Immature",
+    maturity_code %in% 3:7 ~ "Mature",
+  )) |>
   rename("Maturity status" = maturity_code) |>
-  arrange(`Maturity status`)
+  arrange(`Maturity status`) |>
+  # Group by maturity and show each maturity level only once
+  mutate(
+    `Maturity status` = as.character(`Maturity status`),
+    Maturity = ifelse(duplicated(Maturity), "", Maturity)
+  ) |>
+  relocate(Maturity, .before = `Maturity status`)
 
 latex_table <- bin_table2 |>
   kable(
@@ -221,10 +231,10 @@ latex_table <- bin_table2 |>
     booktabs = TRUE,
     longtable = FALSE,
     escape = FALSE,
-    col.names = c("Maturity status", "Uninfected", "Infected", "Uninfected", "Infected"),
-    align = c("l", "r", "r", "r", "r")
+    col.names = c("Maturity", "Maturity status", "Uninfected", "Infected", "Uninfected", "Infected"),
+    align = c("l", "r", "r", "r", "r", "r")
   ) %>%
-  add_header_above(c(" " = 1, "Female" = 2, "Male" = 2)) %>%
+  add_header_above(c(" " = 2, "Female" = 2, "Male" = 2)) %>%
   kable_styling(latex_options = c("hold_position"), position = "center")
 
 

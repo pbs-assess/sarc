@@ -28,6 +28,7 @@ clean_species_name <- function(species) {
     tolower() |>
     gsub(" rockfish", "", x = _) |>
     gsub("rougheye/blackspotted", "REBS", x = _) |>
+    gsub("rougheye blackspotted", "REBS", x = _) |>
     gsub("pacific ocean perch", "POP", x = _) |>
     gsub("^([a-z])", "\\U\\1", x = _, perl = TRUE) # capitalize first letter
 }
@@ -126,7 +127,6 @@ ad_table |>
 write_tex(scales::comma(filter(ad_table, species == "Total") |> pull("uninfected")), "nTotalAgeUninfected")
 write_tex(scales::comma(filter(ad_table, species == "Total") |> pull("infected")), "nTotalAgeInfected")
 
-
 write_tex_comment("\n% Infection Rate Statistics")
 write_tex_comment("---------------------")
 # Infection rates for species
@@ -200,10 +200,36 @@ imm_mat_ratio_df <- imm_to_mat_ratio |>
     species_clean = clean_species_name(species),
     macro_base = paste0("RatioImmMat", species_clean, sex),
     value = mround(median, 1),
-    ci = paste0(mround(lwr, 1), " to ", mround(upr, 1))
+    ci = paste0(mround(lwr, 1), ", ", mround(upr, 1))
   ) |>
   group_walk(~ {
     write_tex(.x$value, paste0(.x$macro_base, "Median"))
     write_tex(.x$ci, paste0(.x$macro_base, "CI"))
   })
 
+# Body condition population posterior probabilities
+# ------------------------------------------------
+write_tex_comment("\n% Body condition population posterior probabilities")
+write_tex_comment("------------------------------------------------")
+condition_posteriors <- readRDS(here::here("data-generated", "condition-posteriors.rds")) |>
+  filter(term == "Infection")
+write_tex(round(100 * mean(filter(condition_posteriors, sex == "female" & species == "population")$combined > 0), 0), "probCondFemalesGreater")
+write_tex(round(100 * mean(filter(condition_posteriors, sex == "male" & species == "population")$combined > 0), 0), "probCondMalesGreater")
+
+# Infection coefficient summary only
+write_tex_comment("\n% Infection coefficient estimates (as percentages)")
+write_tex_comment("------------------------------------------------")
+post_all_summary <- readRDS(here::here("data-generated", "condition-posteriors-summary.rds"))
+post_all_summary |>
+  group_by(species, sex) |>
+  mutate(
+    species_clean = clean_species_name(species),
+    sex_clean = paste0(toupper(substr(sex, 1, 1)), substr(sex, 2, nchar(sex))), # capitalize first letter
+    macro_base = paste0("Cond", species_clean, sex_clean),
+    value = mround(mid_percent, 1),
+    ci = paste0(mround(lwr_percent, 1), ", ", mround(upr_percent, 1))
+  ) |>
+  group_walk(~ {
+    write_tex(.x$value, paste0(.x$macro_base, "MedianPercent"))
+    write_tex(.x$ci, paste0(.x$macro_base, "CIPercent"))
+  })
