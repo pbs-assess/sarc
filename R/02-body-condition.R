@@ -26,8 +26,7 @@ if (!file.exists(here::here("data-generated", "length-weight-dat-clean.rds"))) {
       survey_series_desc, mature) |> # why is this round weight?
   filter(!is.na(round_weight))
 
-  # Identify outliers (should this also be done for the length analysis - it won't change the results there, but would be more consistent)
-  # - I think it might be important to exclude outliers here becuase the mistakes will compound
+  # Identify outliers
   lw_fits <- lwd0 |>
     filter(!is.na(fork_length), !is.na(round_weight), fork_length > 0, round_weight > 0) |>
     mutate(
@@ -202,17 +201,18 @@ ggplot(data = cdat_modified, aes(x = weight_kg, y = predicted_weight, colour = p
   geom_point(shape = 21, alpha = 0.7) +
   geom_point(data = cdat_modified |> filter(sarc_presence == 1), shape = 21, alpha = 0.8, fill = "red") +
   geom_abline(intercept = 0, slope = 1) +
-  ggh4x::facet_nested_wrap(
-    ~ species + sex,
-    scales = "free",
-    labeller = labeller(.default = str_to_title),
-    ncol = 2,
-    strip = ggh4x::strip_nested(text_x =
-        list(element_text(margin = margin(t = 5.5, b = -1, unit = "pt")),
-          element_blank()
-        ), by_layer_x = TRUE
-    )
-  ) +
+  facet_wrap(~ species + sex, scales = "free", labeller = labeller(.default = str_to_title), nrow = 4) +
+  # ggh4x::facet_nested_wrap(
+  #   ~ species + sex,
+  #   scales = "free",
+  #   labeller = labeller(.default = str_to_title),
+  #   ncol = 2,
+  #   strip = ggh4x::strip_nested(text_x =
+  #       list(element_text(margin = margin(t = 5.5, b = -1, unit = "pt")),
+  #         element_blank()
+  #       ), by_layer_x = TRUE
+  #   )
+  # ) +
   scale_colour_manual(
     name = "Status", # A more informative legend title
     values = c("Female" = "black", "Male" = "grey40", "Infected" = "red")
@@ -229,6 +229,7 @@ ggplot(data = cdat, aes(x = log_condition)) +
   scale_fill_manual(values = c("black", "red")) +
   scale_colour_manual(values = c("black", "red"))
 
+# Didn't converge if fit as single model
 # fit <- brm(
 #   log(condition) ~ 0 + Intercept + sarc_presence * sex +
 #     (1 + sarc_presence * sex | species),
@@ -258,7 +259,7 @@ fit_f <- brm(
   chains = 4L,
   cores = 4L,
   backend = "cmdstanr",
-  file = "cache/body-condition-fit-f-sarc-lw-pars",
+  file = "cache/body-condition-fitf",
   seed = 293829,
   prior =
     prior(normal(0, 2), class = b) +
@@ -267,7 +268,7 @@ fit_f <- brm(
   control = list(max_treedepth = 12, adapt_delta = 0.98)
 )
 
-fit_m <- update(fit_f, newdata = cdat |> filter(sex == "male"), file = "cache/body-condition-fit-m-sarc-lw-pars")
+fit_m <- update(fit_f, newdata = cdat |> filter(sex == "male"), file = "cache/body-condition-fitm")
 
 summary(fit_f)
 summary(fit_m)
@@ -337,22 +338,47 @@ post_all <- bind_rows(
          term = factor(term, levels = c("Intercept", "Infection"))
   )
 
+saveRDS(post_all, here::here("data-generated", "condition-posteriors.rds"))
+
+post_all_summary <- post_all |>
+  group_by(term, species, sex) |>
+  summarise(mid = median(combined),
+            lwr = quantile(combined, probs = 0.05),
+            upr = quantile(combined, probs = 0.95)) |>
+  ungroup() |>
+  mutate(mid_percent = (exp(mid) - 1) * 100,
+         lwr_percent = (exp(lwr) - 1) * 100,
+         upr_percent = (exp(upr) - 1) * 100)
+
+post_all_summary |>
+  filter(term != "Intercept") |>
+saveRDS(here::here("data-generated", "condition-posteriors-summary.rds"))
+
+cond_spp_levels <- post_all_summary |>
+  filter(term == "Infection") |>
+  filter(sex == "female") |>
+  filter(species != "population") |>
+  arrange(-mid) |>
+  pull("species") %>%
+  c("population", .)
+
 # Coefficient posteriors
 post_all |>
-  mutate(species = forcats::fct_rev(species),
+  filter(term != "Intercept") |>
+  mutate(species = factor(species, levels = cond_spp_levels),
          species = forcats::fct_relabel(species, str_to_title),
          sex = forcats::fct_relabel(sex, str_to_title)) |>
-  mutate(species = forcats::fct_relevel(species, "Population")) |>
   ggplot() +
   aes(x = combined, y = species, colour = sex, fill = sex) +
   geom_rect(aes(ymin = -Inf, ymax = 1.5, xmin = -Inf, xmax = Inf),
                       fill = "grey92", colour = NA, inherit.aes = FALSE) +
   facet_wrap(~ term, scale = "free_x") +
-  geom_vline(data = distinct(post_all, term) |> mutate(combined = ifelse(term == "Intercept", NA, 0)),
-    aes(xintercept = combined), colour = "grey50", linetype = "dotted") +
+  # geom_vline(data = distinct(post_all, term) |> mutate(combined = ifelse(term == "Intercept", NA, 0)),
+  #   aes(xintercept = combined), colour = "grey50", linetype = "dotted") +
+  geom_vline(xintercept = 0, colour = "grey50", linetype = "dotted") +
   ggdist::stat_pointinterval(.width = c(0.5, 0.95),
-    size = 2, linewidth = 1,
-    position = ggstance::position_dodgev(height = -0.3)) +
+    point_size = 2,
+    position = ggstance::position_dodgev(height = -0.45)) +
   scale_colour_manual(values = c("Female" = "black", "Male" = "grey60")) +
   scale_fill_manual(values = c("Female" = "black", "Male" = "grey60")) +
   guides(colour = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
@@ -361,29 +387,7 @@ post_all |>
   theme(axis.title.y.left = element_blank(),
         legend.position = "top",
         legend.text = element_text(size = 11))
-
-
-# Does length affect body conditions?
-# ------------------------
-# Since condition is effectively a function of length, look at residuals
-
-lw_fit_f <- brms(
-  log(observed_weight) ~ 0 + Intercept + log(observed_length) +
-                         (1 + log(observed_length) | species),
-  data = cdat,
-  family = gaussian(),
-  iter = 2000L,
-  warmup = 1000L,
-  chains = 4L,
-  cores = 4L,
-  backend = "cmdstanr",
-  file = "cache/lw-fit-f",
-)
-
-test <- cdat |> filter(sex == "female")
-test$condition_residual <- residuals(fit_f)[, "Estimate"]
-
-
+ggsave(here::here("figures", "condition-species-coefs.pdf"), width = 4.4, height = 6.8)
 
 # Posterior predictive checks
 # ------------------------
