@@ -108,30 +108,30 @@ fit_1m <- update(fit_1f, newdata = ad |> filter(sex == "male"), file = "cache/ag
 # Getting model with species level effects required sarc_presence prior to be tighter, but
 # age_std was too constrained if it had the same prior. The sarc_presence estimate is
 # relatively uncertain
-fit_2f <- brm(
-  mature ~ 0 + Intercept + (age_std + sarc_presence) +
-    (1 + age_std + sarc_presence | species),
-  family = bernoulli(),
-  data = ad |> filter(sex == "female"),
-  iter = 2000L,
-  warmup = 1000L,
-  chains = 4L,
-  cores = 4L,
-  backend = "cmdstanr",
-  seed = 24829,
-  file = "cache/age-fit2f",
-  prior =
-    prior(normal(0, 4), class = b, coef = age_std) +
-    prior(normal(0, 2), class = b, coef = sarc_presence) +
-    prior(student_t(5, 0, 2), class = sd) +
-    prior(normal(0, 5), class = b, coef = Intercept),
-  control = list(max_treedepth = 12, adapt_delta = 0.97)
-)
-beepr::beep()
+# fit_2f <- brm(
+#   mature ~ 0 + Intercept + (age_std + sarc_presence) +
+#     (1 + age_std + sarc_presence | species),
+#   family = bernoulli(),
+#   data = ad |> filter(sex == "female"),
+#   iter = 2000L,
+#   warmup = 1000L,
+#   chains = 4L,
+#   cores = 4L,
+#   backend = "cmdstanr",
+#   seed = 24829,
+#   file = "cache/age-fit2f",
+#   prior =
+#     prior(normal(0, 4), class = b, coef = age_std) +
+#     prior(normal(0, 2), class = b, coef = sarc_presence) +
+#     prior(student_t(5, 0, 2), class = sd) +
+#     prior(normal(0, 5), class = b, coef = Intercept),
+#   control = list(max_treedepth = 12, adapt_delta = 0.97)
+# )
+# beepr::beep()
 # saveRDS(fit_2f, file.path(fit_dir, "maturity-age-stan-model-female-by-species.rds"))
 # fit_2f <- readRDS(file.path(fit_dir, "maturity-age-stan-model-female-by-species.rds"))
 
-fit_2m <- update(fit_2f, newdata = ad |> filter(sex == "male"), file = "cache/age-fit2m")
+# fit_2m <- update(fit_2f, newdata = ad |> filter(sex == "male"), file = "cache/age-fit2m")
 # saveRDS(fit_2m, file.path(fit_dir, "maturity-age-stan-model-male-by-species.rds"))
 # beepr::beep()
 # fit_2m <- readRDS(file.path(fit_dir, "maturity-age-stan-model-male-by-species.rds"))
@@ -190,66 +190,61 @@ m_comb |>
 prior_summary(fit_1f)
 get_variables(fit_1f)
 
-# These plots aren't really informative right?
-# # Fixed effects
-# post_2f <- fit_2f |>
-#   spread_draws(b_Intercept, b_age_std, b_sarc_presence) |>
-#   mutate(sex = "female")
-# post_2m <- fit_2m |>
-#   spread_draws(b_Intercept, b_age_std, b_sarc_presence) |>
-#   mutate(sex = "male")
-# post_fe <- bind_rows(post_2f, post_2m) |>
-#   pivot_longer(cols = b_Intercept:`b_sarc_presence`, values_to = "fe_coef") |>
-#   mutate(term = gsub("^b_", "", name)) |>
-#   mutate(term = gsub("age_std", "Age", term),
-#          term = gsub("sarc_presence", "Infection", term)) |>
-#   mutate(term = factor(term, levels = c("Intercept", "Age", "Infection")))
-
-# # pd_age_fe <- post_fe |>
-# #   ggplot(aes(x = fe_coef)) +
-# #   facet_grid(term ~ sex) +
-# #   geom_vline(xintercept = 0) +
-# #   ggsidekick::theme_sleek(base_size = 10) +
-# #   geom_density(fill = "grey90") +
-# #   # facet_wrap(~ term, ncol = 1) +
-# #   # coord_cartesian(xlim = c(-3, 6), ylim = c(0, 1.7), expand = FALSE) +
-# #   xlab("Coefficient estimate") + ylab("Posterior density") +
-# #   theme(strip.clip = "off")
-# # pd_age_fe
-
-# # ggsave(here::here("figures", "maturity-age-posterior-densities.png"), width = 4.4, height = 3.8)
+# Fixed effects
+post_1f <- fit_1f |>
+  spread_draws(b_Intercept, b_age_std, b_sarc_presence) |>
+  mutate(sex = "female")
+post_1m <- fit_1m |>
+  spread_draws(b_Intercept, b_age_std, b_sarc_presence) |>
+  mutate(sex = "male")
+post_fe <- bind_rows(post_1f, post_1m) |>
+  pivot_longer(cols = b_Intercept:`b_sarc_presence`, values_to = "fe_coef") |>
+  mutate(term = gsub("^b_", "", name)) |>
+  mutate(term = gsub("age_std", "Age", term),
+         term = gsub("sarc_presence", "Infection", term)) |>
+  mutate(term = factor(term, levels = c("Intercept", "Age", "Infection")))
 
 # # Species effects
-# post_re_2f <- fit_2f |> spread_draws(r_species[species, term]) |>
+# post_re_1f <- fit_1f |> spread_draws(r_species[species, term]) |>
 #   mutate(sex = "female")
-# post_re_2m <- fit_2m |> spread_draws(r_species[species, term]) |>
+# post_re_1m <- fit_1m |> spread_draws(r_species[species, term]) |>
 #   mutate(sex = "male")
-# post <- bind_rows(post_re_2f, post_re_2m) |>
+# post <- bind_rows(post_re_1f, post_re_1m) |>
 #   mutate(term = gsub("^b_", "", term)) |>
-#   mutate(term = gsub("age_std", "Age", term),
+#   mutate(term = gsub("length_std", "Length", term),
 #          term = gsub("sarc_presence", "Infection", term)) |>
-#   mutate(term = factor(term, levels = c("Intercept", "Age", "Infection")))
-
-# ggplot(post, aes(x = r_species, y = term)) +
-#   facet_wrap(~ sex) +
-#   geom_vline(xintercept = 0) +
-#   stat_halfeye()
+#   mutate(term = factor(term, levels = c("Intercept", "Length", "Infection", "Length:Infection")))
 
 # post_spp <- left_join(post_fe, post) |>
 #   mutate(combined = r_species + fe_coef) |>
 #   mutate(species = gsub("\\.", " ", species))
 
-# post_spp |>
-#   filter(term != "Intercept") |>
-#   group_by(term, sex, species) |>
-#   summarise(lwr = quantile(combined, probs = 0.0275), upr = quantile(combined, probs = 0.975), mid = median(combined)) |>
-#   ggplot(aes(x = mid, y = species, xmin = lwr, xmax = upr)) +
-#   facet_wrap(sex ~ term) +
-#   geom_vline(xintercept = 0, lty = 2) +
-#   geom_point(pch = 21) +
-#   geom_linerange() + ggsidekick::theme_sleek() +
-#   xlab("Coefficient estimate") + theme(axis.title.y.left = element_blank())
-# ggsave(here::here("figures", "maturity-age-species-coef.png"))
+# Supplemental figure - species-level coefficients
+post_fe |>
+  filter(term != "Intercept") |>
+  mutate(species = "population") |>
+  mutate(species = forcats::fct_rev(species),
+         species = forcats::fct_relabel(species, str_to_title),
+         sex = forcats::fct_relabel(sex, str_to_title)) |>
+  ggplot() +
+  aes(x = fe_coef, y = species, colour = sex, fill = sex) +
+  facet_wrap(~ term, scale = "free_x") +
+  geom_vline(data = distinct(post_fe, term) |>
+    mutate(xint = ifelse(term == "Age", NA, 0)) |>
+    filter(term != "Intercept"),
+    aes(xintercept = xint), colour = "grey50", linetype = "dotted") +
+  ggdist::stat_pointinterval(.width = c(0.95),
+    size = 2, linewidth = 1,
+    position = ggstance::position_dodgev(height = -0.5)) +
+  scale_color_manual(values = c("Female" = "black", "Male" = "grey60")) +
+  scale_fill_manual(values = c("Female" = "black", "Male" = "grey60")) +
+  guides(colour = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
+  ggsidekick::theme_sleek(base_size = 12) +
+  xlab("Coefficient estimate") +
+  theme(axis.title.y.left = element_blank(),
+        legend.position = "top",
+        legend.text = element_text(size = 11))
+ggsave(here::here("figures", "length-species-coef.pdf"), width = 7.1, height = 5.5)
 
 # Overall ogives
 # --------------
@@ -320,6 +315,38 @@ wrap_plots(list(length_ogive, age_ogive), ncol = 1,
 
 ggsave(here::here("figures", "length-age-ogives.pdf"), width = 7.1, height = 6.1)
 # ggsave(here::here("figures", "length-age-ogives.png"), width = 7.1, height = 6.1)
+
+get_p50 <- function(dat, .int, .slope, .sex, p = 0.5) {
+  dat <- filter(dat, sex == .sex)
+  .sd <- sd(dat$specimen_age)
+  .mean <- mean(dat$specimen_age)
+  xx <- -(log((1/p) - 1) + .int) / .slope
+  (xx * .sd) + .mean
+}
+
+p50_diff <-post_fe |>
+  mutate(species = "population") |>
+  group_by(sex, species) |>
+  group_split() |>
+  purrr::map_dfr(\(x) {
+    intercept <- filter(x, term == "Intercept") |> pull(fe_coef)
+    age_slope <- filter(x, term == "Age") |> pull(fe_coef)
+    sarc_adj <- filter(x, term == "Infection") |> pull(fe_coef)
+    data.frame(
+      p50_sarc_0 = get_p50(ad, intercept, age_slope, .sex = x$sex[1]),
+      p50_sarc_1 = get_p50(ad, intercept + sarc_adj, age_slope, .sex = x$sex[1]),
+      species = x$species[1],
+      sex = x$sex[1]
+    )
+  }) |>
+  mutate(diff = p50_sarc_1 - p50_sarc_0)
+
+p50_diff_summary <- p50_diff |>
+  group_by(species, sex) |>
+  summarise(mid = median(diff),
+            lwr = quantile(diff, probs = 0.05),
+            upr = quantile(diff, probs = 0.95))
+saveRDS(p50_diff_summary, here::here("data-generated", "p50-age-diff-summary.rds"))
 
 # --------
 # Species-level: Using model with parameter specific priors:
@@ -425,10 +452,10 @@ ggsave(here::here("figures", "age-species-coef.pdf"), width = 5.9, height = 3.5)
 
 
 # Compare expected length when probability of maturity > 0.5
-get_p50 <- function(.int, .slope, .sd = sd(ad$specimen_age), .mean = mean(ad$specimen_age), p = 0.5) {
-  xx <- -(log((1/p) - 1) + .int) / .slope
-  (xx * .sd) + .mean
-}
+# get_p50 <- function(.int, .slope, .sd = sd(ad$specimen_age), .mean = mean(ad$specimen_age), p = 0.5) {
+#   xx <- -(log((1/p) - 1) + .int) / .slope
+#   (xx * .sd) + .mean
+# }
 
 p50df <- group_by(post_spp, sex, species) |>
   group_split() |>

@@ -155,7 +155,24 @@ p50_diff_summary |>
     sex_clean = paste0(toupper(substr(sex, 1, 1)), substr(sex, 2, nchar(sex))), # capitalize first letter
     macro_base = paste0("LDiffFifty", species_clean, sex_clean),
     value = mround(mid, 1),
-    ci = paste0(mround(lwr, 1), " to ", mround(upr, 1))
+    ci = paste0(mround(lwr, 1), ", ", mround(upr, 1))
+  ) |>
+  group_by(species, sex) |>
+  group_walk(~ {
+    write_tex(.x$value, paste0(.x$macro_base, "Median"))
+    write_tex(.x$ci, paste0(.x$macro_base, "CI"))
+  })
+
+write_tex_comment("\n% Age Ogive Statistics - difference in age at 50\\% maturity")
+p50_diff_age <- readRDS(here::here("data-generated", "p50-age-diff-summary.rds"))
+p50_diff_age |>
+  mutate(
+    species_clean = clean_species_name(species),
+    species_clean = gsub(" ", "", species_clean),
+    sex_clean = paste0(toupper(substr(sex, 1, 1)), substr(sex, 2, nchar(sex))), # capitalize first letter
+    macro_base = paste0("AgeDiffFifty", species_clean, sex_clean),
+    value = mround(mid, 1),
+    ci = paste0(mround(lwr, 1), ", ", mround(upr, 1))
   ) |>
   group_by(species, sex) |>
   group_walk(~ {
