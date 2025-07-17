@@ -140,6 +140,24 @@ ad_table |>
 write_tex(scales::comma(filter(ad_table, species == "Total") |> pull("uninfected")), "nTotalAgeUninfected")
 write_tex(scales::comma(filter(ad_table, species == "Total") |> pull("infected")), "nTotalAgeInfected")
 
+# Age ~ infection
+# ---------------
+write_tex_comment("\n% Age ~ infection")
+write_tex_comment("----------------")
+
+age_infection_posteriors <- readRDS(here::here("data-generated", "age-infection-posteriors.rds"))
+age_infection_posteriors |>
+  group_by(sex, infection) |>
+  summarise(median = mround(median(predicted_age), 1),
+            lwr = mround(quantile(predicted_age, probs = 0.05), 1),
+            upr = mround(quantile(predicted_age, probs = 0.95), 1)) |>
+  mutate(macro_base = paste0("Age", sex, infection)) |>
+  group_walk(~ {
+    write_tex(.x$median, paste0(.x$macro_base, "Median"))
+    write_tex(paste0(.x$lwr, ", ", .x$upr), paste0(.x$macro_base, "CI"))
+  })
+
+# ----
 write_tex_comment("\n% Infection Rate Statistics")
 write_tex_comment("---------------------")
 # Infection rates for species
