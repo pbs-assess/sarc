@@ -98,7 +98,8 @@ write_tex_comment("\n% Age Data Statistics")
 write_tex_comment("-----------------")
 # Age data sampling
 ad <- readRDS(here::here("data-generated", "age-dat.rds")) |>
-  mutate(species = as.character(species))
+  mutate(species = as.character(species)) |>
+  filter(sex %in% c("female", "male"))
 ad_table <- bind_rows(
   ad |>
     group_by(species) |>
