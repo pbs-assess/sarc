@@ -109,7 +109,20 @@ ad_table <- bind_rows(
 )
 
 write_tex(length(unique(ad$species)), "nAgeSpecies")
-write_tex(filter(ad_table, species != "Total") |> pull("species") |> paste(collapse = ", "), "ageSpeciesList")
+
+# Create species list with "and" before the last species
+species_list <- filter(ad_table, species != "Total") |> pull("species")
+if (length(species_list) > 1) {
+  species_list_formatted <- paste(
+    paste(species_list[-length(species_list)], collapse = ", "),
+    ", and ",
+    species_list[length(species_list)],
+    sep = ""
+  )
+} else {
+  species_list_formatted <- species_list
+}
+write_tex(species_list_formatted, "ageSpeciesList")
 
 ad_table |>
   filter(species != "Total") |>
@@ -164,8 +177,18 @@ p50_diff_summary |>
   })
 
 write_tex_comment("\n% Age Ogive Statistics - difference in age at 50\\% maturity")
-p50_diff_age <- readRDS(here::here("data-generated", "p50-age-diff-summary.rds"))
-p50_diff_age |>
+
+p50_diff_age <- readRDS(here::here("data-generated", "p50-age-diff-posterior.rds"))
+
+write_tex(mean(filter(p50_diff_age, species == "population", sex == "male")$diff <= 0) * 100, "probAgeDiffFiftyMaleLEqZero")
+
+p50_diff_age_summary <- p50_diff_age |>
+  group_by(species, sex) |>
+  summarise(mid = median(diff),
+            lwr = quantile(diff, probs = 0.05),
+            upr = quantile(diff, probs = 0.95))
+
+p50_diff_age_summary |>
   mutate(
     species_clean = clean_species_name(species),
     species_clean = gsub(" ", "", species_clean),

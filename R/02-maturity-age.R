@@ -244,7 +244,7 @@ post_fe |>
   theme(axis.title.y.left = element_blank(),
         legend.position = "top",
         legend.text = element_text(size = 11))
-ggsave(here::here("figures", "length-species-coef.pdf"), width = 7.1, height = 5.5)
+ggsave(here::here("figures", "age-species-coef.pdf"), width = 4.5, height = 3)
 
 # Overall ogives
 # --------------
@@ -324,7 +324,7 @@ get_p50 <- function(dat, .int, .slope, .sex, p = 0.5) {
   (xx * .sd) + .mean
 }
 
-p50_diff <-post_fe |>
+p50_diff <- post_fe |>
   mutate(species = "population") |>
   group_by(sex, species) |>
   group_split() |>
@@ -339,14 +339,9 @@ p50_diff <-post_fe |>
       sex = x$sex[1]
     )
   }) |>
-  mutate(diff = p50_sarc_1 - p50_sarc_0)
-
-p50_diff_summary <- p50_diff |>
-  group_by(species, sex) |>
-  summarise(mid = median(diff),
-            lwr = quantile(diff, probs = 0.05),
-            upr = quantile(diff, probs = 0.95))
-saveRDS(p50_diff_summary, here::here("data-generated", "p50-age-diff-summary.rds"))
+  mutate(diff = p50_sarc_1 - p50_sarc_0) |>
+  as_tibble()
+saveRDS(p50_diff, here::here("data-generated", "p50-age-diff-posterior.rds"))
 
 # --------
 # Species-level: Using model with parameter specific priors:

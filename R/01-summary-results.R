@@ -68,7 +68,7 @@ p <- ggplot(mapping = aes(x = fspecies, y = depth)) +
     position = position_nudge(x = -0.05)) +
   geom_point(data = d1, aes(x = fspecies), shape = 95, colour = "black", size = 2,
     position = position_nudge(x = 0.05)) +
-  labs(x = "Rockfish species", y = "Depth (m)") +
+  labs(x = "", y = "Depth (m)") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
         plot.margin = margin(t = 10, r = 1, b = 1, l = 10))
 
@@ -77,7 +77,6 @@ ggsave(filename = here::here("figures", paste0("depth-plot.pdf")),
   width = 18.2 / cm(1), height = 5.6)
 # ggsave(filename = here::here("figures", paste0("depth-plot.png")),
 #   width = 18.2 / cm(1), height = 5.6)
-
 
 # Frequency of cyst counts across species
 count_levels <- factor(clean_encounter$species)
@@ -107,8 +106,9 @@ ggplot() +
   ) +
   scale_x_continuous(breaks = 1:10, limits = c(0.2, 10), expand = c(0.1, 0)) +
   guides(fill = "none") +
-  theme(aspect.ratio = 1.2) +
-  theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2)) +
+  theme(aspect.ratio = 1.2,
+    axis.title.y = element_blank(),
+    panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2)) +
   labs(
     x = "Number of cysts",
     y = "Species"

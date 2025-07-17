@@ -41,6 +41,7 @@ dat <- readRDS(here::here("data-generated", "clean-data.rds")) |>
   mutate(maturity_factor = factor(ifelse(mature == 1, "mature", "immature"), levels = c("immature", "mature")),
          maturity_bin2 = factor(maturity_code2))
 saveRDS(dat, here::here("data-generated", "clean-data-maturity-bins.rds"))
+write_csv(dat, here::here("data-generated", "clean-data-maturity-bins.csv"))
 
 main_spp <- dat |>
   count(species, maturity_factor, sarc_presence) |>
@@ -204,6 +205,7 @@ p1 <- p_inf_factor |>
     legend.position = "top",
     strip.placement = "outside",
     strip.text.y.left = element_text(angle = 0),
+    axis.title.y = element_blank(),
     panel.spacing = unit(-1, "mm"),
   )
 p1
@@ -263,7 +265,8 @@ p2 <- imm_mat_ratio_df |>
   theme(
     legend.position = "top",
     strip.placement = "outside",
-    strip.text.y.left = element_text(angle = 0)
+    strip.text.y.left = element_text(angle = 0),
+    axis.title.y = element_blank()
   )
 
 p2
@@ -282,8 +285,9 @@ mean(filter(imm_mat_ratio_df, sex == "female" & species == "population")$imm_mat
 mean(filter(imm_mat_ratio_df, sex == "male" & species == "population")$imm_mat_ratio > 1)
 mean(filter(imm_mat_ratio_df, sex == "male" & species == "population")$imm_mat_ratio > 2)
 
-# ----
+# ------------------------------------------------------------------------------
 # Q3: Does infection rate differ across maturity bins (collapsed 4 and 5)
+# ------------------------------------------------------------------------------
 # In natural space calculate the ratio of sarc infection in immature to mature:
 nd <- expand.grid(
   # species = unique(dat$species),
@@ -370,6 +374,23 @@ p2 <- p1 %+%
 ggsave(here::here("figures", "maturity-bin-P(infected)-main-spp.pdf"), width = 7.1, height = 9.6)
 # ggsave(here::here("figures", "maturity-bin-P(infected)-main-spp.png"), width = 7.1, height = 9.6)
 
+pop_only1f <- p1 %+%
+  prep_plot_data(p_inf_bins |> filter(sex == "female", species == "population"),
+    spp_levels = p_inf_bins_spp_levels,
+    main_spp_only = TRUE) +
+    theme(axis.title.y = element_blank(),
+          strip.text.y = element_blank(),
+          strip.clip = "off")
+pop_only1m <- p1 %+%
+  prep_plot_data(p_inf_bins |> filter(sex == "male", species == "population"),
+    spp_levels = p_inf_bins_spp_levels,
+    main_spp_only = TRUE) +
+    theme(axis.title.y = element_blank(),
+          strip.text.y = element_blank(),
+          strip.clip = "off")
+pop_only1 <- ((pop_only1f + ggtitle("Female")) + (pop_only1m + ggtitle("Male"))) +
+  plot_layout(guides = "collect") & theme(legend.position = "none")
+
 # p1 <- p1 %+%
 #   prep_plot_data(p_inf_bins |> filter(sex == "male"),
 #     spp_levels = p_inf_bins_spp_levels,
@@ -396,13 +417,14 @@ pop_ratios3 <- pop_level3 |>
   ungroup() |>
   select(.draw, sex, maturity_bin2, .epred) |>
   pivot_wider(names_from = maturity_bin2, values_from = .epred) |>
+  rename(`4-5` = `4.5`) |>
   mutate(`1/2` = `1` / `2`,
          `1/3` = `1`/ `3`,
-         `1/4.5` = `1` / `4.5`,
+         `1/4-5` = `1` / `4-5`,
          `1/6` = `1` / `6`,
          `1/7` = `1` / `7`) |>
   mutate(`2/3` = `2` / `3`,
-         `2/4.5` = `2` / `4.5`,
+         `2/4-5` = `2` / `4-5`,
          `2/6` = `2` / `6`,
          `2/7` = `2` / `7`) |>
   mutate(species = "population") |>
@@ -412,13 +434,14 @@ spp_ratios3 <- spp_level3 |>
   ungroup() |>
   select(species, .draw, sex, maturity_bin2, .epred) |>
   pivot_wider(names_from = maturity_bin2, values_from = .epred) |>
+  rename(`4-5` = `4.5`) |>
   mutate(`1/2` = `1` / `2`,
          `1/3` = `1` / `3`,
-         `1/4.5` = `1` / `4.5`,
+         `1/4-5` = `1` / `4-5`,
          `1/6` = `1` / `6`,
          `1/7` = `1` / `7`) |>
   mutate(`2/3` = `2` / `3`,
-         `2/4.5` = `2` / `4.5`,
+         `2/4-5` = `2` / `4-5`,
          `2/6` = `2` / `6`,
          `2/7` = `2` / `7`) |>
   select(species, .draw, sex, starts_with("1"), starts_with("2"))
@@ -466,6 +489,24 @@ pm <- p_fm %+%
 ggsave(here::here("figures", "maturity-bin-ratio-main-spp-immature.pdf"), width = 7.1, height = 9.6)
 # ggsave(here::here("figures", "maturity-bin-ratio-main-spp-immature.png"), width = 7.1, height = 9.6)
 
+# Population only - immature to other bins
+pop_only2f <- p_fm %+%
+  prep_plot_data(bin_ratios |> filter(str_detect(bins, "1/"), sex == "female", species == "population"),
+    spp_levels = bin_ratio_spp_levels,
+    main_spp_only = TRUE) +
+    theme(axis.title.y = element_blank(),
+          strip.text.y = element_blank(),
+          strip.clip = "off")
+pop_only2m <- p_fm %+%
+  prep_plot_data(bin_ratios |> filter(str_detect(bins, "1/"), sex == "male", species == "population"),
+    spp_levels = bin_ratio_spp_levels,
+    main_spp_only = TRUE) +
+    theme(axis.title.y = element_blank(),
+          strip.text.y = element_blank(),
+          strip.clip = "off")
+pop_only2 <- ((pop_only2f + ggtitle("Female")) + (pop_only2m + ggtitle("Male"))) +
+  plot_layout(guides = "collect") & theme(legend.position = "none")
+
 # Maturity status 2 comparsion
 # ------------------------
 # p_fm2 <- p_fm %+% # very cluttered visually
@@ -477,7 +518,7 @@ p_f2 <- p_fm %+%
     spp_levels = bin_ratio_spp_levels, main_spp_only = TRUE) +
     scale_y_continuous(limits = c(0, 10), oob = scales::oob_keep) +
     theme(strip.text.y = element_blank())
-p_m2 <- p_fm2 %+%
+p_m2 <- p_f2 %+%
   prep_plot_data(bin_ratios |> filter(str_detect(bins, "^2"), sex == "male"),
     spp_levels = bin_ratio_spp_levels, main_spp_only = TRUE) +
     scale_y_continuous(limits = c(0, 30), oob = scales::oob_keep) +
@@ -489,6 +530,29 @@ p_m2 <- p_fm2 %+%
   plot_layout(guides = "collect") & theme(legend.position = "none")
 ggsave(here::here("figures", "maturity-bin-ratio-main-spp-maturing.pdf"), width = 7.1, height = 9.6)
 # ggsave(here::here("figures", "maturity-bin-ratio-main-spp-maturing.png"), width = 7.1, height = 9.6)
+
+pop_only3f <- p_fm %+%
+  prep_plot_data(bin_ratios |> filter(str_detect(bins, "^2"), sex == "female", species == "population"),
+    spp_levels = bin_ratio_spp_levels,
+    main_spp_only = TRUE) +
+    theme(axis.title.y = element_blank(),
+          strip.text.y = element_blank(),
+          strip.clip = "off")
+pop_only3m <- p_fm %+%
+  prep_plot_data(bin_ratios |> filter(str_detect(bins, "^2"), sex == "male", species == "population"),
+    spp_levels = bin_ratio_spp_levels,
+    main_spp_only = TRUE) +
+    theme(axis.title.y = element_blank(),
+          strip.text.y = element_blank(),
+          strip.clip = "off")
+pop_only3 <- ((pop_only3f + ggtitle("Female")) + (pop_only3m + ggtitle("Male"))) +
+  plot_layout(guides = "collect") & theme(legend.position = "none")
+
+# Maturity bin population only trends
+# ------------------------
+
+(pop_only1 / pop_only2 / pop_only3) + plot_annotation(tag_levels = "a", tag_suffix = ")")
+ggsave(here::here("figures", "maturity-bin-comparison-population.pdf"), width = 7.1, height = 7.3)
 
 # ------------------------------------------------------------------------------
 # Q2: Do immature fish have a higher number of sarcs than mature fish (original Figure 6?)
@@ -562,7 +626,7 @@ p_inf_factor_summary
 saveRDS(p_inf_factor_summary, here::here("data-generated", "maturity-factor-infection-probabilities.rds"))
 
 # Estimates from model fit3b (sarc_presence ~ maturity_bin2 * sex).
-# quantiles for infection probabilities for different maturity bins (1, 2, 3, 4.5, 6, 7) (by species and sex)
+# quantiles for infection probabilities for different maturity bins (1, 2, 3, 4-5, 6, 7) (by species and sex)
 # see line ~464 in this script.
 p_inf_bins_summary
 saveRDS(p_inf_bins_summary, here::here("data-generated", "maturity-bin-infection-probabilities.rds"))
