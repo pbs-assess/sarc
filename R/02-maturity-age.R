@@ -185,18 +185,18 @@ fit_age2
 #   prior(student_t(3, 0, 2), class = sd) +
 #   prior(normal(0, 10), class = b, coef = Intercept)
 # )
-priors <- get_prior(fit_2f)
-fit_2f_p <- update(fit_2f, sample_prior = "only")
-fit_2m_p <- update(fit_2m, sample_prior = "only")
+priors <- get_prior(fit_1f)
+fit_1f_p <- update(fit_1f, sample_prior = "only")
+fit_1m_p <- update(fit_1m, sample_prior = "only")
 
-mcmc_areas(as_draws_df(fit_2f_p), regex_pars = c("^b_"))
-mcmc_areas(as_draws_df(fit_2f_p), regex_pars = c("^sd_")) +
+mcmc_areas(as_draws_df(fit_1f_p), regex_pars = c("^b_"))
+mcmc_areas(as_draws_df(fit_1f_p), regex_pars = c("^sd_")) +
   xlim(c(0, 25))
 
 # Get prior draws
 f_comb <- bind_rows(
-  as_draws_df(fit_2f_p) |> mutate(source = "prior"),
-  as_draws_df(fit_2f) |> mutate(source = "posterior")
+  as_draws_df(fit_1f_p) |> mutate(source = "prior"),
+  as_draws_df(fit_1f) |> mutate(source = "posterior")
 )
 f_comb |>
   pivot_longer(cols = starts_with("b_"), names_to = "parameter") |>
@@ -211,8 +211,8 @@ f_comb |>
 #   xlim(c(0, 20))
 
 m_comb <- bind_rows(
-  as_draws_df(fit_2m_p) |> mutate(source = "prior"),
-  as_draws_df(fit_2m) |> mutate(source = "posterior")
+  as_draws_df(fit_1m_p) |> mutate(source = "prior"),
+  as_draws_df(fit_1m) |> mutate(source = "posterior")
 )
 m_comb |>
   pivot_longer(cols = starts_with("b_"), names_to = "parameter") |>
