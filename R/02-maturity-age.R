@@ -104,6 +104,47 @@ fit_1f <- brm(
 
 fit_1m <- update(fit_1f, newdata = ad |> filter(sex == "male"), file = "cache/age-fit1m")
 
+# Effect of infection on age
+# ------------------------------------------------------------------------------
+fit_age <- brm(
+  specimen_age ~ 0 + Intercept + (sarc_presence * sex),
+  family = Gamma(link = "log"),
+  data = ad,
+  iter = 2000L,
+  warmup = 1000L,
+  seed = 4821,
+  file = "cache/age-infection-fit",
+  chains = 4L,
+  cores = 4L,
+  backend = "cmdstanr",
+  prior =
+    prior(normal(0, 2), class = b) +
+    prior(normal(0, 5), class = b, coef = Intercept),
+  control = list(max_treedepth = 12, adapt_delta = 0.97)
+)
+fit_age
+
+# (1 + sarc_presence | species) model didn't converge
+fit_age2 <- brm(
+  specimen_age ~ 0 + Intercept + (sarc_presence) + (1 + (sarc_presence) | species),
+  family = Gamma(link = "log"),
+  data = ad |> filter(sex == "female"),
+  iter = 2000L,
+  warmup = 1000L,
+  seed = 4821,
+  file = "cache/age-infection-fit2",
+  chains = 4L,
+  cores = 4L,
+  backend = "cmdstanr",
+  prior =
+    prior(normal(0, 2), class = b) +
+    prior(normal(0, 4), class = b, coef = Intercept),
+  control = list(max_treedepth = 12, adapt_delta = 0.99)
+)
+beepr::beep()
+fit_age2
+
+
 # Including species level effects - doesn't converge anymore after cleaning up data
 # Getting model with species level effects required sarc_presence prior to be tighter, but
 # age_std was too constrained if it had the same prior. The sarc_presence estimate is
@@ -184,6 +225,73 @@ m_comb |>
 #   geom_density(alpha = 0.5) +
 #   facet_wrap(~parameter, scales = "free") +
 #   xlim(c(0, 20))
+
+# For age ~ infection model
+priors <- get_prior(fit_age)
+priors
+fit_age_p <- update(fit_age, sample_prior = "only")
+
+f_age_comb <- bind_rows(
+  as_draws_df(fit_age_p) |> mutate(source = "prior"),
+  as_draws_df(fit_age) |> mutate(source = "posterior")
+)
+f_age_comb |>
+  pivot_longer(cols = starts_with("b_"), names_to = "parameter") |>
+  ggplot(aes(x = value, fill = source)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~parameter, scales = "free")
+
+# Age ~ infection
+# ---
+post_age <- fit_age |>
+  spread_draws(b_Intercept, b_sarc_presence, b_sexmale, `b_sarc_presence:sexmale`) |>
+  pivot_longer(cols = b_Intercept:`b_sarc_presence:sexmale`, values_to = "fe_coef") |>
+  mutate(term = gsub("^b_", "", name)) |>
+  mutate(term = gsub("sarc_presence", "Infection", term),
+         term = gsub("sexmale", "Male", term)) |>
+  mutate(term = factor(term, levels = c("Intercept", "Male", "Infection", "Infection:Male")))
+
+post_age_groups <- fit_age |>
+  spread_draws(b_Intercept, b_sarc_presence, b_sexmale, `b_sarc_presence:sexmale`) |>
+  mutate(
+    log_uninfected_female = b_Intercept,
+    log_infected_female = b_Intercept + b_sarc_presence,
+    log_uninfected_male = b_Intercept + b_sexmale,
+    log_infected_male = b_Intercept + b_sarc_presence + b_sexmale + `b_sarc_presence:sexmale`,
+    `Uninfected Female` = exp(log_uninfected_female),
+    `Infected Female`   = exp(log_infected_female),
+    `Uninfected Male`   = exp(log_uninfected_male),
+    `Infected Male`     = exp(log_infected_male)
+  ) |>
+  pivot_longer(
+    cols = `Uninfected Female`:`Infected Male`,
+    names_to = "group",
+    values_to = "predicted_age"
+  ) |>
+  separate(group, into = c("infection", "sex"), sep = " ") |>
+  mutate(sex = factor(sex, levels = c("Female", "Male")),
+         infection = factor(infection, levels = c("Infected", "Uninfected")))
+
+post_age_groups |>
+  select(sex, infection, predicted_age) |>
+saveRDS(here::here("data-generated", "age-infection-posteriors.rds"))
+
+post_age_groups |>
+  select(sex, infection, predicted_age) |>
+  ggplot() +
+  aes(x = predicted_age, y = infection, colour = sex) +
+ggdist::stat_pointinterval(.width = c(0.5, 0.95),
+    point_size = 2,
+    point_interval = "median_qi",
+    position = ggstance::position_dodgev(height = -0.45)) +
+  scale_color_manual(values = c("Female" = "black", "Male" = "grey60")) +
+  guides(colour = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
+  ggsidekick::theme_sleek(base_size = 12) +
+  xlab("Median age (years)") +
+  theme(axis.title.y.left = element_blank(),
+        legend.position = "top",
+        legend.text = element_text(size = 11))
+ggsave(here::here("figures", "median-age.pdf"), width = 4.2, height = 4.3)
 
 # Maturity ~ presence brms
 # ------------------------
