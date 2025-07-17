@@ -144,8 +144,34 @@ write_tex(scales::comma(filter(ad_table, species == "Total") |> pull("infected")
 # ---------------
 write_tex_comment("\n% Age ~ infection")
 write_tex_comment("----------------")
+write_tex_comment("\n% Age difference is age of uninfected minus age of infected")
 
 age_infection_posteriors <- readRDS(here::here("data-generated", "age-infection-posteriors.rds"))
+
+age_infection_posteriors |>
+  pivot_wider(names_from = c(sex, infection), values_from = predicted_age) |>
+  mutate(female_diff = Female_Uninfected - Female_Infected,
+         male_diff = Male_Uninfected - Male_Infected) |>
+  select(.chain, .iteration, .draw, female_diff, male_diff) |>
+  summarise(median_female = mround(median(female_diff), 1),
+            lwr_female = mround(quantile(female_diff, probs = 0.05), 1),
+            upr_female = mround(quantile(female_diff, probs = 0.95), 1),
+            median_male = mround(median(male_diff), 1),
+            lwr_male = mround(quantile(male_diff, probs = 0.05), 1),
+            upr_male = mround(quantile(male_diff, probs = 0.95), 1)) |>
+  pivot_longer(
+    cols = everything(),
+    names_to = c(".value", "sex"),
+    names_sep = "_"
+  )  |>
+  arrange(sex) |>
+  mutate(macro_base = paste0("AgeDiff", sex)) |>
+  group_walk(~ {
+    write_tex(.x$median, paste0(.x$macro_base, "Median"))
+    write_tex(paste0(.x$lwr, ", ", .x$upr), paste0(.x$macro_base, "CI"))
+  })
+
+write_tex_comment("\n% Mean ages")
 age_infection_posteriors |>
   group_by(sex, infection) |>
   summarise(median = mround(median(predicted_age), 1),
