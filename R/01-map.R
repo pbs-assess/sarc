@@ -26,6 +26,8 @@ d0 |> filter(year %in% 1999:2000) |> distinct(fishing_event_id) |> nrow()
 mesh <- make_mesh(d, c("X", "Y"), cutoff = 5)
 plot(mesh)
 d$year_f <- as.factor(d$year)
+saveRDS(d, here::here("data-generated", "clean-data-map.rds"))
+
 fit <- sdmTMB(
   sarc_presence ~ 1 + poly(log_depth, 2) + year_f,
   # sarc_presence ~ 1 + poly(log_depth, 2) + s(year, k = 5),
@@ -204,7 +206,95 @@ group_by(d, year) |>
   summarise(prop = mean(as.integer(as.character(sarc_presence))), n = n()) |>
   as.data.frame()
 
-# TODO - done
-# - [x] better grid
-# - [x] early years!? all 1s
-# - [x] same depth assignment
+# Account for different rates of infection across species
+d$species_f <- as.factor(d$species)
+fit_sp <- sdmTMB(
+  sarc_presence ~ 1 + poly(log_depth, 2) + year_f + (1 | species_f),
+  data = d,
+  anisotropy = TRUE,
+  family = binomial(),
+  spatial = "on",
+  silent = TRUE,
+  mesh = mesh
+)
+beepr::beep()
+
+sp_nd <- expand_grid(g, species_f = unique(d$species_f))
+p_sp <- predict(fit_sp, newdata = sp_nd, re_form_iid = ~ 0)
+# p_sp <- predict(fit_sp, newdata = sp_nd, re_form_iid = ~ 0)
+
+ggplot(bc_coast_proj) + geom_sf() +
+  geom_tile(width = 2000, height = 2000, data = p_sp, mapping = aes(X * 1000, Y * 1000, fill = plogis(est))) +
+  scale_fill_viridis_c(option = "F",
+    trans = "qlogis",
+    limits = c(1e-3, 0.5),  # Set meaningful limits for visualization
+    breaks = c(0.001, 0.01, 0.1, 0.5),
+    labels = c("< 0.1%", "1%", "10%", "50%"),
+    name = "Probability of *Sarcotaces* sp. encounter",
+    oob = scales::squish,
+    guide = guide_colorbar(title.position = "top", barheight = 0.5, barwidth = 12)) +
+  coord_sf() +
+  theme_light() +
+  # geom_point(data = filter(d, sarc_presence == 0), mapping = aes(X, Y), inherit.aes = FALSE, colour = "white", alpha = 0.01, size = 1, pch = 4) +
+  # geom_point(data = filter(d, sarc_presence == 1), mapping = aes(X * 1000, Y * 1000), inherit.aes = FALSE, colour = "white", alpha = 0.1, size = 2, pch = 4, fill = NA) +
+  xlim(230957.7 - 80000, 1157991 - 220000) +
+  ylim(5366427 - 25000, 6353456 - 250000) +
+  theme(legend.title = element_markdown(hjust = 0.5),
+        legend.direction = "horizontal",
+        legend.position = "top",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank()) +
+  labs(x = "Longitude", y = "Latitude") +
+  facet_wrap(~ species_f)
+
+# What do predictions look like without depth:addd$species_f <- as.factor(d$species)
+fit_no_depth <- sdmTMB(
+  sarc_presence ~ 1 + (1 | species_f),
+  data = d,
+  anisotropy = TRUE,
+  family = binomial(),
+  spatial = "on",
+  silent = TRUE,
+  mesh = mesh
+)
+beepr::beep()
+
+fit_no_depth_no_spp <- sdmTMB(
+  sarc_presence ~ 1,
+  data = d,
+  anisotropy = TRUE,
+  family = binomial(),
+  spatial = "on",
+  silent = TRUE,
+  mesh = mesh
+)
+beepr::beep()
+
+sp_nd <- expand_grid(g, species_f = unique(d$species_f))
+p_no_depth <- predict(fit_no_depth, newdata = sp_nd)
+
+ggplot(bc_coast_proj) + geom_sf() +
+  geom_tile(width = 2000, height = 2000, data = p_no_depth, mapping = aes(X * 1000, Y * 1000, fill = plogis(est))) +
+  scale_fill_viridis_c(option = "F",
+    trans = "qlogis",
+    limits = c(1e-3, 0.5),  # Set meaningful limits for visualization
+    breaks = c(0.001, 0.01, 0.1, 0.5),
+    labels = c("< 0.1%", "1%", "10%", "50%"),
+    name = "Probability of *Sarcotaces* sp. encounter",
+    oob = scales::squish,
+    guide = guide_colorbar(title.position = "top", barheight = 0.5, barwidth = 12)) +
+  coord_sf() +
+  theme_light() +
+  # geom_point(data = filter(d, sarc_presence == 0), mapping = aes(X, Y), inherit.aes = FALSE, colour = "white", alpha = 0.01, size = 1, pch = 4) +
+  # geom_point(data = filter(d, sarc_presence == 1), mapping = aes(X * 1000, Y * 1000), inherit.aes = FALSE, colour = "white", alpha = 0.1, size = 2, pch = 4, fill = NA) +
+  xlim(230957.7 - 80000, 1157991 - 220000) +
+  ylim(5366427 - 25000, 6353456 - 250000) +
+  theme(legend.title = element_markdown(hjust = 0.5),
+        legend.direction = "horizontal",
+        legend.position = "top",
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank()) +
+  labs(x = "Longitude", y = "Latitude") +
+  facet_wrap(~ species_f)
+
+AIC(fit, fit_sp, fit_no_depth, fit_no_depth_no_spp)
