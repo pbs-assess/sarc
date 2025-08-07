@@ -273,7 +273,6 @@ post_age_groups <- fit_age |>
          infection = factor(infection, levels = c("Infected", "Uninfected")))
 
 post_age_groups |>
-  select(sex, infection, predicted_age) |>
 saveRDS(here::here("data-generated", "age-infection-posteriors.rds"))
 
 post_age_groups |>

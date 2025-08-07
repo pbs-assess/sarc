@@ -108,7 +108,7 @@ e_table |>
   mutate(
     Species = str_to_title(species),
     n = `0` + `1`,
-    p = round(100 * (`1` / n), 1),
+    p = round(100 * (`1` / n), 2),
     p_text = ifelse(`0` == 0, "-", as.character(p))
   ) |>
   mutate(Species = ifelse(Species %in% asterisk_spp, paste0(Species, "*"), Species)) |>
@@ -119,7 +119,7 @@ e_table |>
   bg(i = ~ !grepl("\\*", Species) & Infected == 0, bg = "grey90") |>
   align(j = "Infection rate (%)", align = "right", part = "all") |>
   set_table_properties(layout = "autofit") |>
-  set_caption("Table 1. Sample sizes and infection detections for species examined for Sarcotaces infection in 1999-2000 and 2019-2022. Species highlighted in grey had no observed infections in any specimens examined. Species marked with '*' have been found with Sarcotaces cysts in non-systematic sampling events.")
+  set_caption("Table 1. Sample sizes and infection detections for species examined for Sarcotaces sp. infection in 2019--2022. Species highlighted in grey had no observed infections in any specimens examined. Species marked with an asterisk have been found with Sarcotaces sp. cysts in non-systematic sampling events.")
 
 ```
 
