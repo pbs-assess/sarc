@@ -286,11 +286,11 @@ ggdist::stat_pointinterval(.width = c(0.5, 0.95),
   scale_color_manual(values = c("Female" = "black", "Male" = "grey60")) +
   guides(colour = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
   ggsidekick::theme_sleek(base_size = 12) +
-  xlab("Median age (years)") +
+  xlab("Age (years)") +
   theme(axis.title.y.left = element_blank(),
         legend.position = "top",
         legend.text = element_text(size = 11))
-ggsave(here::here("figures", "median-age.pdf"), width = 4.2, height = 4.3)
+ggsave(here::here("figures", "age-diff.pdf"), width = 4.2, height = 4.3)
 
 # Maturity ~ presence brms
 # ------------------------
