@@ -1,6 +1,9 @@
 # Analysis of *Sarcotaces* sp. infections in BC groundfish
 
-Analysis code and derived data for a forthcoming CJFAS paper on *Sarcotaces* sp. infections in British Columbia groundfish samples, including relationships with species, depth, age, length, body condition, and maturity.
+Analysis code and data for the paper:
+
+Siegle, M.R., Dunic, J.C., Castle, K., Wyeth, M., Love, M.S.,
+Anderson, S.C. Prevalence of the parasitic copepod, *Sarcotaces* sp., infection in British Columbia rockfishes (*Sebastes* spp.) and implications for rockfish life-history. In press at the Canadian Journal of Fisheries and Aquatic Sciences.
 
 ## Main folders
 
