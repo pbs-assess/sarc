@@ -93,11 +93,26 @@ if (!file.exists(here::here("data-generated", "lw-fits.rds"))) {
       dat <- dat |> filter(species == !!species)
     }
 
-    fit <- gfplot::fit_length_weight(dat,
-      sex = sex, method = "tmb",
-      too_high_quantile = 1,
-      usability_codes = NULL
-    )
+    dat <- dat |>
+      filter(sex == !!sex, length > 0, weight > 0)
+
+    if (requireNamespace("gfplot", quietly = TRUE)) {
+      fit <- gfplot::fit_length_weight(dat,
+        sex = sex, method = "tmb",
+        too_high_quantile = 1,
+        usability_codes = NULL
+      )
+    } else {
+      model <- lm(log(weight) ~ log(length), data = dat)
+      log_a <- unname(coef(model)[1])
+      b <- unname(coef(model)[2])
+      pred_length <- seq(min(dat$length), max(dat$length), length.out = 100)
+      fit <- list(
+        predictions = tibble(length = pred_length, weight = exp(log_a + b * log(pred_length))),
+        pars = tibble(log_a = log_a, b = b),
+        data = dat
+      )
+    }
 
     fit$predictions <- as_tibble(fit$predictions) |> mutate(species = species, sex = sex)
     fit$pars <- as_tibble(fit$pars) |> mutate(species = species, sex = sex)
@@ -268,7 +283,15 @@ fit_f <- brm(
   control = list(max_treedepth = 12, adapt_delta = 0.98)
 )
 
-fit_m <- update(fit_f, newdata = cdat |> filter(sex == "male"), file = "cache/body-condition-fitm")
+fit_m <- update(
+  fit_f,
+  newdata = cdat |> filter(sex == "male"),
+  file = "cache/body-condition-fitm",
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L
+)
 
 summary(fit_f)
 summary(fit_m)
@@ -421,9 +444,29 @@ ggplot(pp, aes(condition, .prediction)) +
   ggtitle("Posterior predictive simulation")
 
 
-priors <- get_prior(fit_f)
-fit_f_p <- update(fit_f, sample_prior = "only", prior = priors)
-fit_m_p <- update(fit_m, sample_prior = "only", prior = priors)
+priors <- (
+  prior(normal(0, 2), class = b) +
+  prior(student_t(3, 0, 2), class = sd) +
+  prior(normal(0, 10), class = b, coef = Intercept)
+)
+fit_f_p <- update(
+  fit_f,
+  sample_prior = "only",
+  prior = priors,
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L
+)
+fit_m_p <- update(
+  fit_m,
+  sample_prior = "only",
+  prior = priors,
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L
+)
 
 mcmc_areas(as_draws_df(fit_f_p), regex_pars = c("^b_"))
 mcmc_areas(as_draws_df(fit_f_p), regex_pars = c("^sd_")) +
@@ -461,4 +504,3 @@ m_comb |>
   geom_density(alpha = 0.5) +
   facet_wrap(~parameter, scales = "free") +
   xlim(c(0, 20))
-

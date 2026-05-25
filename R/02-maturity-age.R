@@ -102,7 +102,15 @@ fit_1f <- brm(
 )
 # beepr::beep()
 
-fit_1m <- update(fit_1f, newdata = ad |> filter(sex == "male"), file = "cache/age-fit1m")
+fit_1m <- update(
+  fit_1f,
+  newdata = ad |> filter(sex == "male"),
+  file = "cache/age-fit1m",
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L
+)
 
 # Effect of infection on age
 # ------------------------------------------------------------------------------
@@ -185,13 +193,32 @@ fit_age2
 #   prior(student_t(3, 0, 2), class = sd) +
 #   prior(normal(0, 10), class = b, coef = Intercept)
 # )
-priors <- get_prior(fit_1f)
-fit_1f_p <- update(fit_1f, sample_prior = "only")
-fit_1m_p <- update(fit_1m, sample_prior = "only")
+priors <- (
+  prior(normal(0, 5), class = b) +
+  prior(normal(0, 10), class = b, coef = Intercept)
+)
+fit_1f_p <- update(
+  fit_1f,
+  sample_prior = "only",
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L
+)
+fit_1m_p <- update(
+  fit_1m,
+  sample_prior = "only",
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L
+)
 
 mcmc_areas(as_draws_df(fit_1f_p), regex_pars = c("^b_"))
-mcmc_areas(as_draws_df(fit_1f_p), regex_pars = c("^sd_")) +
-  xlim(c(0, 25))
+if (any(grepl("^sd_", names(as_draws_df(fit_1f_p))))) {
+  mcmc_areas(as_draws_df(fit_1f_p), regex_pars = c("^sd_")) +
+    xlim(c(0, 25))
+}
 
 # Get prior draws
 f_comb <- bind_rows(
@@ -227,9 +254,19 @@ m_comb |>
 #   xlim(c(0, 20))
 
 # For age ~ infection model
-priors <- get_prior(fit_age)
+priors <- (
+  prior(normal(0, 2), class = b) +
+  prior(normal(0, 5), class = b, coef = Intercept)
+)
 priors
-fit_age_p <- update(fit_age, sample_prior = "only")
+fit_age_p <- update(
+  fit_age,
+  sample_prior = "only",
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L
+)
 
 f_age_comb <- bind_rows(
   as_draws_df(fit_age_p) |> mutate(source = "prior"),
@@ -452,252 +489,215 @@ saveRDS(p50_diff, here::here("data-generated", "p50-age-diff-posterior.rds"))
 
 # --------
 # Species-level: Using model with parameter specific priors:
-nd_f <- nd |> filter(sex == "female")
-p <- brms::posterior_linpred(fit_2f, newdata = nd_f, re_formula = NULL)
-nd_f$lwr <- apply(p, 2, quantile, probs = 0.05)
-nd_f$est <- apply(p, 2, median)
-nd_f$upr <- apply(p, 2, quantile, probs = 0.95)
+if (exists("fit_2f") && exists("fit_2m")) {
+  nd_f <- nd |> filter(sex == "female")
+  p <- brms::posterior_linpred(fit_2f, newdata = nd_f, re_formula = NULL)
+  nd_f$lwr <- apply(p, 2, quantile, probs = 0.05)
+  nd_f$est <- apply(p, 2, median)
+  nd_f$upr <- apply(p, 2, quantile, probs = 0.95)
 
-nd_m <- nd |> filter(sex == "male")
-p <- brms::posterior_linpred(fit_2m, newdata = nd_m, re_formula = NULL)
-nd_m$lwr <- apply(p, 2, quantile, probs = 0.05)
-nd_m$est <- apply(p, 2, median)
-nd_m$upr <- apply(p, 2, quantile, probs = 0.95)
+  nd_m <- nd |> filter(sex == "male")
+  p <- brms::posterior_linpred(fit_2m, newdata = nd_m, re_formula = NULL)
+  nd_m$lwr <- apply(p, 2, quantile, probs = 0.05)
+  nd_m$est <- apply(p, 2, median)
+  nd_m$upr <- apply(p, 2, quantile, probs = 0.95)
 
+  ad$jit <- runif(nrow(ad), 0, 0.03)
+  ad_plot <- ad |>
+    mutate(jit = ifelse(sarc_presence == 1, jit + 0.04, jit)) |>
+    mutate(mature_jit = ifelse(mature == 1, mature - jit, mature + jit))
 
-ad$jit <- runif(nrow(ad), 0, 0.03)
-ad_plot <- ad |>
-  mutate(jit = ifelse(sarc_presence == 1, jit + 0.04, jit)) |>
-  mutate(mature_jit = ifelse(mature == 1, mature - jit, mature + jit))
+  bind_rows(nd_f, nd_m) |>
+    mutate(sarc_pres_label = factor(sarc_presence, levels = c(0, 1), labels = c("No", "Yes"))) |>
+    ggplot(aes(x = specimen_age, y = plogis(est),
+      colour = sarc_pres_label, fill = sarc_pres_label)) +
+    facet_grid(sex ~ species, scales = "free_x", labeller = labeller(sex = str_to_title, species = str_to_title)) +
+    geom_ribbon(aes(ymin = plogis(lwr), ymax = plogis(upr)), colour = NA, alpha = 0.3) +
+    geom_line() +
+    coord_cartesian(expand = FALSE, ylim = c(-0.08, 1.08)) +
+    geom_segment(data = ad_plot |> filter(mature == 1),
+      mapping = aes(x = specimen_age, y = 1.01 + 0.03 * sarc_presence, yend = 1.04 + 0.03 * sarc_presence),
+      alpha = 0.8, position = position_jitter(width = 0.2, height = 0)) +
+    geom_segment(data = ad_plot |> filter(mature == 0),
+      mapping = aes(x = specimen_age, y = -0.04 - 0.03 * sarc_presence, yend = -0.01 - 0.03 * sarc_presence),
+      alpha = 0.8, position = position_jitter(width = 0.2, height = 0)) +
+    labs(x = "Age (years)", y = "Probability of maturity",
+      colour = "*Sarcotaces* sp. present", fill = "*Sarcotaces* sp. present") +
+    theme(legend.title = ggtext::element_markdown()) +
+    scale_fill_manual(values = c("No" = "grey50", "Yes" = "red")) +
+    scale_colour_manual(values = c("No" = "grey50", "Yes" = "red")) +
+    theme(legend.position = "top")
+  ggsave(here::here("figures", "age-ogives-by-species.pdf"), width = 7, height = 4.8)
 
-bind_rows(nd_f, nd_m) |>
-  mutate(sarc_pres_label = factor(sarc_presence, levels = c(0, 1), labels = c("No", "Yes"))) |>
-ggplot(aes(x = specimen_age, y = plogis(est),
-               colour = sarc_pres_label, fill = sarc_pres_label)) +
-  facet_grid(sex ~ species, scales = "free_x", labeller = labeller(sex = str_to_title, species = str_to_title)) +
-  geom_ribbon(aes(ymin = plogis(lwr), ymax = plogis(upr)), colour = NA, alpha = 0.3) +
-  geom_line() +
-  coord_cartesian(expand = FALSE, ylim = c(-0.08, 1.08)) +
-  geom_segment(data = ad_plot |> filter(mature == 1),
-    mapping = aes(x = specimen_age, y = 1.01 + 0.03 * sarc_presence, yend = 1.04 + 0.03 * sarc_presence),
-    alpha = 0.8, position = position_jitter(width = 0.2, height = 0)) +
-  geom_segment(data = ad_plot |> filter(mature == 0),
-    mapping = aes(x = specimen_age, y = -0.04 - 0.03 * sarc_presence, yend = -0.01 - 0.03 * sarc_presence),
-    alpha = 0.8, position = position_jitter(width = 0.2, height = 0)) +
-  labs(x = "Age (years)", y = "Probability of maturity",
-       colour = "*Sarcotaces* sp. present", fill = "*Sarcotaces* sp. present") +
-  theme(legend.title = ggtext::element_markdown()) +
-  scale_fill_manual(values = c("No" = "grey50", "Yes" = "red")) +
-  scale_colour_manual(values = c("No" = "grey50", "Yes" = "red")) +
-  theme(legend.position = "top")
-ggsave(here::here("figures", "age-ogives-by-species.pdf"), width = 7, height = 4.8)
-# ggsave(here::here("figures", "age-ogives-by-species.png"), width = 7, height = 4.8)
+  post_2f <- fit_2f |>
+    spread_draws(b_Intercept, b_age_std, b_sarc_presence) |>
+    mutate(sex = "female")
+  post_2m <- fit_2m |>
+    spread_draws(b_Intercept, b_age_std, b_sarc_presence) |>
+    mutate(sex = "male")
+  post_fe <- bind_rows(post_2f, post_2m) |>
+    pivot_longer(cols = b_Intercept:`b_sarc_presence`, values_to = "fe_coef") |>
+    mutate(term = gsub("^b_", "", name)) |>
+    mutate(term = gsub("age_std", "Age", term),
+      term = gsub("sarc_presence", "Infection", term)) |>
+    mutate(term = factor(term, levels = c("Intercept", "Age", "Infection")))
 
-# ------------------------
-# USING MODEL WITH PARAMETER SPECIFIC PRIORS
-# ------------------------
-# Fixed effects
-post_2f <- fit_2f |>
-  spread_draws(b_Intercept, b_age_std, b_sarc_presence) |>
-  mutate(sex = "female")
-post_2m <- fit_2m |>
-  spread_draws(b_Intercept, b_age_std, b_sarc_presence) |>
-  mutate(sex = "male")
-post_fe <- bind_rows(post_2f, post_2m) |>
-  pivot_longer(cols = b_Intercept:`b_sarc_presence`, values_to = "fe_coef") |>
-  mutate(term = gsub("^b_", "", name)) |>
-  mutate(term = gsub("age_std", "Age", term),
-         term = gsub("sarc_presence", "Infection", term)) |>
-  mutate(term = factor(term, levels = c("Intercept", "Age", "Infection")))
+  post_re_2f <- fit_2f |> spread_draws(r_species[species, term]) |>
+    mutate(sex = "female")
+  post_re_2m <- fit_2m |> spread_draws(r_species[species, term]) |>
+    mutate(sex = "male")
+  post <- bind_rows(post_re_2f, post_re_2m) |>
+    mutate(term = gsub("^b_", "", term)) |>
+    mutate(term = gsub("age_std", "Age", term),
+      term = gsub("sarc_presence", "Infection", term)) |>
+    mutate(term = factor(term, levels = c("Intercept", "Age", "Infection")))
 
-# Species effects
-post_re_2f <- fit_2f |> spread_draws(r_species[species, term]) |>
-  mutate(sex = "female")
-post_re_2m <- fit_2m |> spread_draws(r_species[species, term]) |>
-  mutate(sex = "male")
-post <- bind_rows(post_re_2f, post_re_2m) |>
-  mutate(term = gsub("^b_", "", term)) |>
-  mutate(term = gsub("age_std", "Age", term),
-         term = gsub("sarc_presence", "Infection", term)) |>
-  mutate(term = factor(term, levels = c("Intercept", "Age", "Infection")))
+  post_spp <- left_join(post_fe, post) |>
+    mutate(combined = r_species + fe_coef) |>
+    mutate(species = gsub("\\.", " ", species))
 
-post_spp <- left_join(post_fe, post) |>
-  mutate(combined = r_species + fe_coef) |>
-  mutate(species = gsub("\\.", " ", species))
+  p_coef <- post_spp |>
+    filter(term != "Intercept") |>
+    mutate(species = forcats::fct_rev(species),
+      species = forcats::fct_relabel(species, str_to_title),
+      sex = forcats::fct_relabel(sex, str_to_title)) |>
+    ggplot() +
+    aes(x = combined, y = species, colour = sex, fill = sex) +
+    facet_wrap(~ term, scale = "free_x") +
+    geom_vline(data = distinct(post_spp, term) |>
+      mutate(xint = ifelse(term == "Age", NA, 0)) |>
+      filter(term != "Intercept"),
+      aes(xintercept = xint), colour = "grey50", linetype = "dotted") +
+    ggdist::stat_pointinterval(.width = c(0.95),
+      size = 2, linewidth = 1,
+      position = ggstance::position_dodgev(height = -0.5)) +
+    scale_color_manual(values = c("Female" = "black", "Male" = "grey60")) +
+    scale_fill_manual(values = c("Female" = "black", "Male" = "grey60")) +
+    guides(colour = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
+    ggsidekick::theme_sleek(base_size = 12) +
+    xlab("Coefficient estimate") +
+    theme(axis.title.y.left = element_blank(),
+      legend.position = "top",
+      legend.text = element_text(size = 11))
+  p_coef
+  ggsave(here::here("figures", "age-species-coef.pdf"), width = 5.9, height = 3.5)
 
-post_spp |>
-  filter(term != "Intercept") |>
-  mutate(species = forcats::fct_rev(species),
-         species = forcats::fct_relabel(species, str_to_title),
-         sex = forcats::fct_relabel(sex, str_to_title)) |>
-  ggplot() +
-  aes(x = combined, y = species, colour = sex, fill = sex) +
-  facet_wrap(~ term, scale = "free_x") +
-  geom_vline(data = distinct(post_spp, term) |>
-    mutate(xint = ifelse(term == "Age", NA, 0)) |>
-    filter(term != "Intercept"),
-    aes(xintercept = xint), colour = "grey50", linetype = "dotted") +
-  ggdist::stat_pointinterval(.width = c(0.95),
-    size = 2, linewidth = 1,
-    position = ggstance::position_dodgev(height = -0.5)) +
-  scale_color_manual(values = c("Female" = "black", "Male" = "grey60")) +
-  scale_fill_manual(values = c("Female" = "black", "Male" = "grey60")) +
-  guides(colour = guide_legend(title = "Sex"), fill = guide_legend(title = "Sex")) +
-  ggsidekick::theme_sleek(base_size = 12) +
-  xlab("Coefficient estimate") +
-  theme(axis.title.y.left = element_blank(),
-        legend.position = "top",
-        legend.text = element_text(size = 11))
-p_coef
-ggsave(here::here("figures", "age-species-coef.pdf"), width = 5.9, height = 3.5)
-# ggsave(here::here("figures", "age-species-coef.png"), width = 5.9, height = 3.5)
+  p50df <- group_by(post_spp, sex, species) |>
+    group_split() |>
+    purrr::map_dfr(\(x) {
+      intercept <- filter(x, term == "Intercept") |> pull(combined)
+      age_slope <- filter(x, term == "Age") |> pull(combined)
+      sarc_adj <- filter(x, term == "Infection") |> pull(combined)
+      data.frame(
+        p50_sarc_0 = get_p50(intercept, age_slope),
+        p50_sarc_1 = get_p50(intercept + sarc_adj, age_slope),
+        species = x$species[1],
+        sex = x$sex[1]
+      )
+    }) |> as_tibble()
 
-
-# Compare expected length when probability of maturity > 0.5
-# get_p50 <- function(.int, .slope, .sd = sd(ad$specimen_age), .mean = mean(ad$specimen_age), p = 0.5) {
-#   xx <- -(log((1/p) - 1) + .int) / .slope
-#   (xx * .sd) + .mean
-# }
-
-p50df <- group_by(post_spp, sex, species) |>
-  group_split() |>
-  purrr::map_dfr(\(x) {
-    intercept <- filter(x, term == "Intercept") |> pull(combined)
-    age_slope <- filter(x, term == "Age") |> pull(combined)
-    sarc_adj <- filter(x, term == "Infection") |> pull(combined)
-    data.frame(
-      p50_sarc_0 = get_p50(intercept, age_slope),
-      p50_sarc_1 = get_p50(intercept + sarc_adj, age_slope),
-      species = x$species[1],
-      sex = x$sex[1]
+  p50_diff <- p50df |>
+    mutate(diff = p50_sarc_1 - p50_sarc_0) |>
+    group_by(species, sex) |>
+    summarise(
+      lwr = quantile(diff, probs = 0.05),
+      upr = quantile(diff, probs = 0.95),
+      mid = median(diff)
     )
-  }) |> as_tibble()
 
-p50_diff <- p50df |>
-  mutate(diff = p50_sarc_1 - p50_sarc_0) |>
-  group_by(species, sex) |>
-  summarise(
-    lwr = quantile(diff, probs = 0.05),
-    upr = quantile(diff, probs = 0.95),
-    mid = median(diff)
-  )
+  p_p50 <- p50_diff |>
+    mutate(species = factor(species, levels = p50_diff |> filter(sex == "female") |> arrange(-mid) |> pull("species"))) |>
+    ggplot(aes(mid, species, xmin = lwr, xmax = upr)) +
+    geom_linerange(lwd = 0.4) +
+    geom_point(pch = 19) +
+    geom_vline(xintercept = 0, lty = 2) +
+    theme(axis.title.y.left = element_blank()) +
+    ggsidekick::theme_sleek() +
+    xlab("Difference in age at 50% maturity<br>if infected with *Sarcotaces* sp.<br>(years)") +
+    theme(axis.title = ggtext::element_markdown()) +
+    ylab("") +
+    facet_grid(. ~ sex, labeller = labeller(sex = str_to_title), scales = "free_x") +
+    scale_y_discrete(label = str_to_title)
+  p_p50
+  ggsave(here::here("figures", "age-p50-by-species.pdf"), width = 5.9, height = 3.5)
 
-p50_diff |>
-  mutate(species = factor(species, levels = p50_diff |> filter(sex == "female") |> arrange(-mid) |> pull("species"))) |>
-  ggplot(aes(mid, species, xmin = lwr, xmax = upr)) +
-  geom_linerange(lwd = 0.4) +
-  geom_linerange(aes(xmin = lwr2, xmax = upr2), lwd = .7) +
-  geom_point(pch = 19) +
-  geom_vline(xintercept = 0, lty = 2)+
-  theme(axis.title.y.left = element_blank()) +
-  ggsidekick::theme_sleek() +
-  xlab("Difference in age at 50% maturity<br>if infected with *Sarcotaces* sp.<br>(years)") +
-  theme(axis.title = ggtext::element_markdown()) +
-  ylab("") +
-  facet_grid(. ~ sex, labeller = labeller(sex = str_to_title), scales = "free_x") +
-  scale_y_discrete(label = str_to_title)
-p_p50
-ggsave(here::here("figures", "age-p50-by-species.pdf"), width = 5.9, height = 3.5)
-# ggsave(here::here("figures", "age-p50-by-species.png"), width = 5.9, height = 3.5)
+  color_scheme_set("mix-brightblue-gray")
+  brms::pp_check(fit_2f, ndraws = 50)
+  mcmc_trace(fit_2f, regex_pars = "^b")
+  mcmc_trace(fit_2f, regex_pars = "^r")
+  mcmc_trace(fit_2f)
+  plot(fit_2f)
 
-p50_diff
+  y_obs_f <- ad |> filter(sex == "female") |> pull(mature)
+  yrep_f <- posterior_predict(fit_2f)
+  ppc_stat(y = y_obs_f, yrep = yrep_f, stat = mean)
+  ppc_dens_overlay(y_obs_f, yrep_f)
 
-# ------------------------------------------------------------------------------
-# Posterior predictive checks
-# -----
-color_scheme_set("mix-brightblue-gray")
-brms::pp_check(fit_2f, ndraws = 50)
-mcmc_trace(fit_2f, regex_pars = "^b")
-mcmc_trace(fit_2f, regex_pars = "^r")
-mcmc_trace(fit_2f)
-plot(fit_2f)
+  skew <- function(x) {
+    xdev <- x - mean(x)
+    n <- length(x)
+    r <- sum(xdev^3) / sum(xdev^2)^1.5
+    return(r * sqrt(n) * (1 - 1 / n)^1.5)
+  }
 
-# Observations
-y_obs_f <- ad |> filter(sex == "female") |> pull(mature)
-# Posterior predictions
-yrep_f <- posterior_predict(fit_2f)
-ppc_stat(y = y_obs_f, yrep = yrep_f, stat = mean)
-ppc_dens_overlay(y_obs_f, yrep_f)
+  color_scheme_set("blue")
+  ppc_stat(y_obs_f, yrep_f, stat = "skew")
+  ppc_stat_grouped(y_obs_f, yrep_f, stat = "skew", group = fit_2f$data$species)
+  ppc_stat_grouped(y = y_obs_f, yrep = yrep_f, group = fit_2f$data$species, stat = mean)
 
-# https://discourse.mc-stan.org/t/posterior-predictive-checks-kurtosis-and-skew/11136/3
-skew <- function(x) {
-  xdev <- x - mean(x)
-  n <- length(x)
-  r <- sum(xdev^3) / sum(xdev^2)^1.5
-  return(r * sqrt(n) * (1 - 1/n)^1.5)
+  breaks <- seq(min(ad$specimen_age, na.rm = TRUE), max(ad$specimen_age, na.rm = TRUE), length.out = 100)
+
+  a_bins <- ad |>
+    mutate(age_bin = cut(specimen_age, breaks = breaks, include.lowest = TRUE)) |>
+    group_by(species, sex, age_bin, sarc_presence) |>
+    summarise(
+      prop_mature = sum(mature) / n(),
+      mean_age = mean(specimen_age, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  pp_f_species <- fit_2f |>
+    add_predicted_draws(
+      newdata = ad |>
+        filter(sex == "female") |>
+        select(sex, species, specimen_age, sarc_presence, age_std) |>
+        mutate(age_bin = cut(specimen_age, breaks = breaks, include.lowest = TRUE)),
+      re_formula = NULL,
+      ndraws = 10
+    )
+
+  pp_m_species <- fit_2m |>
+    add_predicted_draws(
+      newdata = ad |>
+        filter(sex == "male") |>
+        select(sex, species, specimen_age, sarc_presence, age_std) |>
+        mutate(age_bin = cut(specimen_age, breaks = breaks, include.lowest = TRUE)),
+      re_formula = NULL,
+      ndraws = 10
+    )
+
+  pred <- bind_rows(pp_f_species, pp_m_species) |>
+    mutate(age_bin = cut(specimen_age, breaks = breaks, include.lowest = TRUE)) |>
+    group_by(species, sex, .draw, age_bin, sarc_presence) |>
+    summarise(
+      prop_mature = sum(.prediction) / n(),
+      mean_age = mean(specimen_age, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  bind_rows(a_bins, pred) |>
+    filter(sex == "female") |>
+    ggplot(aes(x = mean_age, y = prop_mature)) +
+    geom_point(aes(colour = species)) +
+    guides(colour = "none") +
+    scale_color_brewer(palette = "Paired") +
+    facet_grid(.draw ~ sarc_presence, scales = "free_x")
+
+  bind_rows(a_bins, pred) |>
+    filter(sex == "male") |>
+    ggplot(aes(x = mean_age, y = prop_mature)) +
+    geom_point(aes(colour = species)) +
+    guides(colour = "none") +
+    scale_color_brewer(palette = "Paired") +
+    facet_grid(.draw ~ sarc_presence, scales = "free_x")
 }
-
-color_scheme_set("blue")
-ppc_stat(y_obs_f, yrep_f, stat = "skew")
-ppc_stat_grouped(y_obs_f, yrep_f, stat = "skew", group = fit_2f$data$species)
-
-# Species means
-ppc_stat_grouped(y = y_obs_f, yrep = yrep_f, group = fit_2f$data$species, stat = mean)
-
-# Compare simulated mean expectations with observed maturity proportions
-breaks <- seq(min(ad$specimen_age, na.rm = TRUE), max(ad$specimen_age, na.rm = TRUE), length.out = 100)
-
-pp_f <- posterior_predict(fit_2f, ndraws = 20, re_formula = NULL)
-pp_m <- posterior_predict(fit_2m, ndraws = 20, re_formula = NULL)
-
-# Observed
-a_bins <- ad |>
-  mutate(age_bin = cut(specimen_age, breaks = breaks, include.lowest = TRUE)) |>
-  group_by(species, sex, age_bin, sarc_presence) |>
-  summarise(
-    prop_mature = sum(mature) / n(),
-    mean_age = mean(specimen_age, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# a_bins |>
-#   filter(sarc_presence == 0) |>
-# ggplot(data = _, aes(x = mean_age, y = prop_mature)) +
-#   geom_point() +
-#   guides(colour = "none") +
-#   facet_grid(sex ~ ., scales = "free_x")
-
-# Simulated
-pp_f_species <- fit_2f |>
-  # add_epred_draws(
-  add_predicted_draws(
-    newdata = ad |>
-      filter(sex == "female") |>
-      select(sex, species, specimen_age, sarc_presence, age_std) |>
-      mutate(age_bin = cut(specimen_age, breaks = breaks, include.lowest = TRUE)),
-  re_formula = NULL, ndraws = 10)
-
-pp_m_species <- fit_2m |>
-  add_predicted_draws(
-    newdata = ad |>
-      filter(sex == "male") |>
-      select(sex, species, specimen_age, sarc_presence, age_std) |>
-      mutate(age_bin = cut(specimen_age, breaks = breaks, include.lowest = TRUE)),
-  re_formula = NULL, ndraws = 10)
-
-pred <- bind_rows(pp_f_species, pp_m_species) |>
-  mutate(age_bin = cut(specimen_age, breaks = breaks, include.lowest = TRUE)) |>
-  group_by(species, sex, .draw, age_bin, sarc_presence) |>
-  summarise(
-    # prop_mature = sum(.epred) / n(),
-    prop_mature = sum(.prediction) / n(),
-    mean_age = mean(specimen_age, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-bind_rows(a_bins, pred) |>
-  filter(sex == "female") |>
-ggplot(data = _, aes(x = mean_age, y = prop_mature)) +
-  geom_point(aes(colour = species)) +
-  guides(colour = "none") +
-  scale_color_brewer(palette = "Paired") +
-  facet_grid(.draw ~ sarc_presence, scales = "free_x")
-
-bind_rows(a_bins, pred) |>
-  filter(sex == "male") |>
-ggplot(data = _, aes(x = mean_age, y = prop_mature)) +
-  geom_point(aes(colour = species)) +
-  guides(colour = "none") +
-  scale_color_brewer(palette = "Paired") +
-  facet_grid(.draw ~ sarc_presence, scales = "free_x")
-

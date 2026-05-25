@@ -8,3 +8,5 @@ data-generated/
 .positai
 figures/
 *.pdf
+/tables
+text/values.tex

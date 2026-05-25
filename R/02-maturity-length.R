@@ -46,7 +46,15 @@ fit_1f <- brm(
 )
 
 # options(mc.cores = parallel::detectCores() - 2)
-fit_1m <- update(fit_1f, newdata = ld |> filter(sex == "male"), file = "cache/length-fit1m")
+fit_1m <- update(
+  fit_1f,
+  newdata = ld |> filter(sex == "male"),
+  file = "cache/length-fit1m",
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L
+)
 
 # Maturity ~ presence brms
 # ------------------------
@@ -291,14 +299,16 @@ plot_p50_diff <- function(data, x_limits = c(-100, 100)) {
 }
 
 # Plot all species
-plot_p50_diff(p50_diff)
+p_p50 <- plot_p50_diff(p50_diff)
 p_p50
 ggsave(here::here("figures", "length-p50-by-species.pdf"), width = 4.7, height = 6.7)
 # ggsave(here::here("figures", "length-p50-by-species.png"), width = 4.7, height = 6.7)
 
 # Plot main species
-plot_p50_diff(p50_diff |> filter(species %in% c(main_spp$species, "population")),
-  x_limits = c(-60, 60))
+p_p50_main <- plot_p50_diff(
+  p50_diff |> filter(species %in% c(main_spp$species, "population")),
+  x_limits = c(-60, 60)
+)
 p_p50_main
 ggsave(here::here("figures", "length-p50-by-main-species.pdf"), width = 4.4, height = 5.2)
 # ggsave(here::here("figures", "length-p50-by-main-species.png"), width = 4.4, height = 5.2)
@@ -408,9 +418,31 @@ ggsave(here::here("length-post-pred.pdf"), width = 6.5, height = 9)
 # ggsave(here::here("length-post-pred.png"), width = 6.5, height = 9)
 
 # Prior
-priors <- get_prior(fit_1f)
-fit_1f_p <- update(fit_1f, sample_prior = "only", prior = priors, seed = 42)
-fit_1m_p <- update(fit_1m, sample_prior = "only", prior = priors, seed = 42)
+priors <- (
+  prior(normal(0, 2), class = b) +
+  prior(student_t(3, 0, 2), class = sd) +
+  prior(normal(0, 10), class = b, coef = Intercept)
+)
+fit_1f_p <- update(
+  fit_1f,
+  sample_prior = "only",
+  prior = priors,
+  seed = 42,
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L
+)
+fit_1m_p <- update(
+  fit_1m,
+  sample_prior = "only",
+  prior = priors,
+  seed = 42,
+  iter = 2000L,
+  warmup = 1000L,
+  chains = 4L,
+  cores = 4L
+)
 
 (plot_sim_mat(fit = fit_1f_p, sex = "female", ld = ld, prior_only = TRUE) +
   theme(strip.text.y = element_blank())) +
