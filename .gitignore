@@ -5,3 +5,6 @@
 *.docx
 cache/
 data-generated/
+.positai
+figures/
+*.pdf

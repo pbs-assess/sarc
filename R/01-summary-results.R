@@ -1,5 +1,7 @@
 library(dplyr)
 library(ggplot2)
+library(tidyr)
+library(stringr)
 library(see)
 library(kableExtra)
 library(flextable)

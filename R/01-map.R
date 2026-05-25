@@ -217,9 +217,9 @@ fit_sp <- sdmTMB(
   silent = TRUE,
   mesh = mesh
 )
-beepr::beep()
+# beepr::beep()
 
-sp_nd <- expand_grid(g, species_f = unique(d$species_f))
+sp_nd <- tidyr::expand_grid(g, species_f = unique(d$species_f))
 p_sp <- predict(fit_sp, newdata = sp_nd, re_form_iid = ~ 0)
 # p_sp <- predict(fit_sp, newdata = sp_nd, re_form_iid = ~ 0)
 
@@ -257,7 +257,7 @@ fit_no_depth <- sdmTMB(
   silent = TRUE,
   mesh = mesh
 )
-beepr::beep()
+# beepr::beep()
 
 fit_no_depth_no_spp <- sdmTMB(
   sarc_presence ~ 1,
@@ -268,9 +268,9 @@ fit_no_depth_no_spp <- sdmTMB(
   silent = TRUE,
   mesh = mesh
 )
-beepr::beep()
+# beepr::beep()
 
-sp_nd <- expand_grid(g, species_f = unique(d$species_f))
+sp_nd <- tidyr::expand_grid(g, species_f = unique(d$species_f))
 p_no_depth <- predict(fit_no_depth, newdata = sp_nd)
 
 ggplot(bc_coast_proj) + geom_sf() +
