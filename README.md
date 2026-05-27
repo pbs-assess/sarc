@@ -1,5 +1,7 @@
 # Analysis of *Sarcotaces* sp. infections in BC groundfish
 
+[![DOI](https://zenodo.org/badge/728410855.svg)](https://doi.org/10.5281/zenodo.20415881)
+
 Analysis code and data for the paper:
 
 Siegle, M.R., Dunic, J.C., Castle, K., Wyeth, M., Love, M.S.,
